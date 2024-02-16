@@ -1,0 +1,8 @@
+install/*
+build/*
+log/*
+.vscode/*
+
+*.out
+*.old
+specification/states/*
