@@ -14,16 +14,17 @@ variables
     connected = [x \in 1..NODE_NUM |-> [y \in 1..NODE_NUM |-> TRUE]];
     timeout = [x \in 1..NODE_NUM |-> FALSE];
 
-    \* 0 -> init, 1 -> in election, 2 -> election finished
-    state = [x \in 1..NODE_NUM |-> 0];
-
     \* queues
     election_messages = [x \in 1..NODE_NUM |-> <<>>];
     reply_messages = [x \in 1..NODE_NUM |-> <<>>];
     leader_messages = [x \in 1..NODE_NUM |-> <<>>];
 
-    lock = FALSE;
+    lock = TRUE;
     expected_leader = 0;
+
+define
+    eventually_elect_one_leader == <>[] \A node \in 1..NODE_NUM: (is_crashed[node] \/ leader[node] = expected_leader)
+end define
 
 procedure send_election_message_to_all(from_node, to_node, message)
 begin
@@ -59,7 +60,6 @@ procedure new_election(node_id)
 begin
     start_new_election:
         yes_count[node_id] := 0;
-        state[node_id] := 1;
         call send_election_message_to_all(node_id, 1,
                     [node_id |-> node_id,
                     connected_count |-> connected_count[node_id],
@@ -174,7 +174,6 @@ begin
 
             if election_id_in_message = election_id[node_id] then
                 leader[node_id] := node_id_in_message;
-                state[node_id] := 2;
             end if;
         end if;
         
@@ -186,185 +185,207 @@ procedure run(node_id)
 begin
     init_run:
         connected[node_id][node_id] := FALSE;
-
-    aquire_lock:
-        await ~lock;
-        lock := TRUE;
     
     check_crash:
         if is_crashed[node_id] then
             lock := FALSE;
             return;
         end if;
-    
-    check_finish:
-        if \A id \in 1..NODE_NUM: (is_crashed[id]
-                                   \/ (state[id] = 2
-                                       /\ timeout[id] = FALSE
-                                       /\ election_messages[id] = <<>>
-                                       /\ reply_messages[id] = <<>>
-                                       /\ leader_messages[id] = <<>>)) then
-            lock := FALSE;
-            assert(leader[node_id] = expected_leader);
-            return;
-        end if;
 
-    start_run:
+    aquire_lock_and_execute:
         either
+            await timeout[node_id];
+            await ~lock;
+            lock := TRUE;
             call check_timeout(node_id);
         or
+            await election_messages[node_id] /= <<>>;
+            await ~lock;
+            lock := TRUE;
             call check_election_message(node_id);
         or
+            await reply_messages[node_id] /= <<>>;
+            await ~lock;
+            lock := TRUE;
             call check_reply_message(node_id);
         or
+            await leader_messages[node_id] /= <<>>;
+            await ~lock;
+            lock := TRUE;
             call check_leader_message(node_id);
         end either;
 
     release_lock:
         lock := FALSE;
-        goto aquire_lock;
+        goto check_crash;
 end procedure;
 
-fair+ process N \in 1..NODE_NUM+1
+fair process N \in 1..NODE_NUM+1
 begin
     start_process:
         if self = NODE_NUM+1 then
-            either
-                \* Node 1 crash
-                is_crashed[1] := TRUE;
-                timeout := <<FALSE, TRUE, TRUE, TRUE>>;
-                expected_leader := 2;
-                connected := <<
-                    <<FALSE, FALSE, FALSE, FALSE>>,
-                    <<FALSE, FALSE, TRUE, TRUE>>,
-                    <<FALSE, TRUE, FALSE, TRUE>>,
-                    <<FALSE, TRUE, TRUE, FALSE>>
-                >>;
-            or
-                \* Node 2 crash
-                is_crashed[2] := TRUE;
-                timeout := <<TRUE, FALSE, TRUE, TRUE>>;
-                expected_leader := 1;
-                connected := <<
-                    <<FALSE, FALSE, TRUE, TRUE>>,
-                    <<FALSE, FALSE, FALSE, FALSE>>,
-                    <<TRUE, FALSE, FALSE, TRUE>>,
-                    <<TRUE, FALSE, TRUE, FALSE>>
-                >>;
-            or
-                \* Node 3 crash
-                is_crashed[3] := TRUE;
-                timeout := <<TRUE, TRUE, FALSE, TRUE>>;
-                expected_leader := 1;
-                connected := <<
-                    <<FALSE, TRUE, FALSE, TRUE>>,
-                    <<TRUE, FALSE, FALSE, TRUE>>,
-                    <<FALSE, FALSE, FALSE, FALSE>>,
-                    <<TRUE, TRUE, FALSE, FALSE>>
-                >>;
-            or
-                \* Node 4 crash
-                is_crashed[4] := TRUE;
-                timeout := <<TRUE, TRUE, TRUE, FALSE>>;
-                expected_leader := 1;
-                connected := <<
-                    <<FALSE, TRUE, TRUE, FALSE>>,
-                    <<TRUE, FALSE, TRUE, FALSE>>,
-                    <<TRUE, TRUE, FALSE, FALSE>>,
-                    <<FALSE, FALSE, FALSE, FALSE>>
-                >>;
-            or
-                \* Link 1-2 crash
-                timeout := <<TRUE, TRUE, FALSE, FALSE>>;
-                expected_leader := 3;
-                connected := <<
-                    <<FALSE, FALSE, TRUE, TRUE>>,
-                    <<FALSE, FALSE, TRUE, TRUE>>,
-                    <<TRUE, TRUE, FALSE, TRUE>>,
-                    <<TRUE, TRUE, TRUE, FALSE>>
-                >>;
-            or
-                \* Link 1-3 crash
-                timeout := <<TRUE, FALSE, TRUE, FALSE>>;
-                expected_leader := 2;
-                connected := <<
-                    <<FALSE, TRUE, FALSE, TRUE>>,
-                    <<TRUE, FALSE, TRUE, TRUE>>,
-                    <<FALSE, TRUE, FALSE, TRUE>>,
-                    <<TRUE, TRUE, TRUE, FALSE>>
-                >>;
-            or
-                \* Link 1-4 crash
-                timeout := <<TRUE, FALSE, FALSE, TRUE>>;
-                expected_leader := 2;
-                connected := <<
-                    <<FALSE, TRUE, TRUE, FALSE>>,
-                    <<TRUE, FALSE, TRUE, TRUE>>,
-                    <<TRUE, TRUE, FALSE, TRUE>>,
-                    <<FALSE, TRUE, TRUE, FALSE>>
-                >>;
-            or
-                \* Link 2-3 crash
-                timeout := <<FALSE, TRUE, TRUE, FALSE>>;
-                expected_leader := 1;
-                connected := <<
-                    <<FALSE, TRUE, TRUE, TRUE>>,
-                    <<TRUE, FALSE, FALSE, TRUE>>,
-                    <<TRUE, FALSE, FALSE, TRUE>>,
-                    <<TRUE, TRUE, TRUE, FALSE>>
-                >>;
-            or
-                \* Link 2-4 crash
-                timeout := <<FALSE, TRUE, FALSE, TRUE>>;
-                expected_leader := 1;
-                connected := <<
-                    <<FALSE, TRUE, TRUE, TRUE>>,
-                    <<TRUE, FALSE, TRUE, FALSE>>,
-                    <<TRUE, TRUE, FALSE, TRUE>>,
-                    <<TRUE, FALSE, TRUE, FALSE>>
-                >>;
-            or
-                \* Link 3-4 crash
-                timeout := <<FALSE, FALSE, TRUE, TRUE>>;
-                expected_leader := 1;
-                connected := <<
-                    <<FALSE, TRUE, TRUE, TRUE>>,
-                    <<TRUE, FALSE, TRUE, TRUE>>,
-                    <<TRUE, TRUE, FALSE, FALSE>>,
-                    <<TRUE, TRUE, FALSE, FALSE>>
-                >>;
-            end either;
+            \* Node 1 crash
+            is_crashed[1] := TRUE;
+            timeout := <<FALSE, TRUE, TRUE, TRUE>>;
+            expected_leader := 2;
+            connected := <<
+                <<FALSE, FALSE, FALSE, FALSE>>,
+                <<FALSE, FALSE, TRUE, TRUE>>,
+                <<FALSE, TRUE, FALSE, TRUE>>,
+                <<FALSE, TRUE, TRUE, FALSE>>
+            >>;
+
+            \* \* Node 1 crash
+            \* is_crashed[1] := TRUE;
+            \* timeout := <<FALSE, TRUE, TRUE>>;
+            \* expected_leader := 2;
+            \* connected := <<
+            \*     <<FALSE, FALSE, FALSE>>,
+            \*     <<FALSE, FALSE, TRUE>>,
+            \*     <<FALSE, TRUE, FALSE>>
+            \* >>;
+            \* either
+            \*     \* Node 1 crash
+            \*     is_crashed[1] := TRUE;
+            \*     timeout := <<FALSE, TRUE, TRUE, TRUE>>;
+            \*     expected_leader := 2;
+            \*     connected := <<
+            \*         <<FALSE, FALSE, FALSE, FALSE>>,
+            \*         <<FALSE, FALSE, TRUE, TRUE>>,
+            \*         <<FALSE, TRUE, FALSE, TRUE>>,
+            \*         <<FALSE, TRUE, TRUE, FALSE>>
+            \*     >>;
+            \* or
+            \*     \* Node 2 crash
+            \*     is_crashed[2] := TRUE;
+            \*     timeout := <<TRUE, FALSE, TRUE, TRUE>>;
+            \*     expected_leader := 1;
+            \*     connected := <<
+            \*         <<FALSE, FALSE, TRUE, TRUE>>,
+            \*         <<FALSE, FALSE, FALSE, FALSE>>,
+            \*         <<TRUE, FALSE, FALSE, TRUE>>,
+            \*         <<TRUE, FALSE, TRUE, FALSE>>
+            \*     >>;
+            \* or
+            \*     \* Node 3 crash
+            \*     is_crashed[3] := TRUE;
+            \*     timeout := <<TRUE, TRUE, FALSE, TRUE>>;
+            \*     expected_leader := 1;
+            \*     connected := <<
+            \*         <<FALSE, TRUE, FALSE, TRUE>>,
+            \*         <<TRUE, FALSE, FALSE, TRUE>>,
+            \*         <<FALSE, FALSE, FALSE, FALSE>>,
+            \*         <<TRUE, TRUE, FALSE, FALSE>>
+            \*     >>;
+            \* or
+            \*     \* Node 4 crash
+            \*     is_crashed[4] := TRUE;
+            \*     timeout := <<TRUE, TRUE, TRUE, FALSE>>;
+            \*     expected_leader := 1;
+            \*     connected := <<
+            \*         <<FALSE, TRUE, TRUE, FALSE>>,
+            \*         <<TRUE, FALSE, TRUE, FALSE>>,
+            \*         <<TRUE, TRUE, FALSE, FALSE>>,
+            \*         <<FALSE, FALSE, FALSE, FALSE>>
+            \*     >>;
+            \* or
+            \*     \* Link 1-2 crash
+            \*     timeout := <<TRUE, TRUE, FALSE, FALSE>>;
+            \*     expected_leader := 3;
+            \*     connected := <<
+            \*         <<FALSE, FALSE, TRUE, TRUE>>,
+            \*         <<FALSE, FALSE, TRUE, TRUE>>,
+            \*         <<TRUE, TRUE, FALSE, TRUE>>,
+            \*         <<TRUE, TRUE, TRUE, FALSE>>
+            \*     >>;
+            \* or
+            \*     \* Link 1-3 crash
+            \*     timeout := <<TRUE, FALSE, TRUE, FALSE>>;
+            \*     expected_leader := 2;
+            \*     connected := <<
+            \*         <<FALSE, TRUE, FALSE, TRUE>>,
+            \*         <<TRUE, FALSE, TRUE, TRUE>>,
+            \*         <<FALSE, TRUE, FALSE, TRUE>>,
+            \*         <<TRUE, TRUE, TRUE, FALSE>>
+            \*     >>;
+            \* or
+            \*     \* Link 1-4 crash
+            \*     timeout := <<TRUE, FALSE, FALSE, TRUE>>;
+            \*     expected_leader := 2;
+            \*     connected := <<
+            \*         <<FALSE, TRUE, TRUE, FALSE>>,
+            \*         <<TRUE, FALSE, TRUE, TRUE>>,
+            \*         <<TRUE, TRUE, FALSE, TRUE>>,
+            \*         <<FALSE, TRUE, TRUE, FALSE>>
+            \*     >>;
+            \* or
+            \*     \* Link 2-3 crash
+            \*     timeout := <<FALSE, TRUE, TRUE, FALSE>>;
+            \*     expected_leader := 1;
+            \*     connected := <<
+            \*         <<FALSE, TRUE, TRUE, TRUE>>,
+            \*         <<TRUE, FALSE, FALSE, TRUE>>,
+            \*         <<TRUE, FALSE, FALSE, TRUE>>,
+            \*         <<TRUE, TRUE, TRUE, FALSE>>
+            \*     >>;
+            \* or
+            \*     \* Link 2-4 crash
+            \*     timeout := <<FALSE, TRUE, FALSE, TRUE>>;
+            \*     expected_leader := 1;
+            \*     connected := <<
+            \*         <<FALSE, TRUE, TRUE, TRUE>>,
+            \*         <<TRUE, FALSE, TRUE, FALSE>>,
+            \*         <<TRUE, TRUE, FALSE, TRUE>>,
+            \*         <<TRUE, FALSE, TRUE, FALSE>>
+            \*     >>;
+            \* or
+            \*     \* Link 3-4 crash
+            \*     timeout := <<FALSE, FALSE, TRUE, TRUE>>;
+            \*     expected_leader := 1;
+            \*     connected := <<
+            \*         <<FALSE, TRUE, TRUE, TRUE>>,
+            \*         <<TRUE, FALSE, TRUE, TRUE>>,
+            \*         <<TRUE, TRUE, FALSE, FALSE>>,
+            \*         <<TRUE, TRUE, FALSE, FALSE>>
+            \*     >>;
+            \* end either;
+
+            lock := FALSE;
         else
             call run(self);
         end if;
 end process;
 
 end algorithm;*)
-\* BEGIN TRANSLATION (chksum(pcal) = "9cd5cc33" /\ chksum(tla) = "d5620dc")
+\* BEGIN TRANSLATION (chksum(pcal) = "68801fe2" /\ chksum(tla) = "d0239a2")
 \* Procedure variable node_id_in_message of procedure check_election_message at line 88 col 5 changed to node_id_in_message_
 \* Procedure variable election_id_in_message of procedure check_election_message at line 90 col 5 changed to election_id_in_message_
 \* Procedure variable election_id_in_message of procedure check_reply_message at line 138 col 5 changed to election_id_in_message_c
-\* Parameter from_node of procedure send_election_message_to_all at line 28 col 40 changed to from_node_
-\* Parameter to_node of procedure send_election_message_to_all at line 28 col 51 changed to to_node_
-\* Parameter message of procedure send_election_message_to_all at line 28 col 60 changed to message_
-\* Parameter node_id of procedure new_election at line 58 col 24 changed to node_id_
+\* Parameter from_node of procedure send_election_message_to_all at line 29 col 40 changed to from_node_
+\* Parameter to_node of procedure send_election_message_to_all at line 29 col 51 changed to to_node_
+\* Parameter message of procedure send_election_message_to_all at line 29 col 60 changed to message_
+\* Parameter node_id of procedure new_election at line 59 col 24 changed to node_id_
 \* Parameter node_id of procedure check_timeout at line 71 col 25 changed to node_id_c
 \* Parameter node_id of procedure check_election_message at line 85 col 34 changed to node_id_ch
 \* Parameter node_id of procedure check_reply_message at line 134 col 31 changed to node_id_che
 \* Parameter node_id of procedure check_leader_message at line 162 col 32 changed to node_id_chec
 CONSTANT defaultInitValue
 VARIABLES election_id, connected_count, yes_count, leader, is_crashed, 
-          connected, timeout, state, election_messages, reply_messages, 
-          leader_messages, lock, expected_leader, pc, stack, from_node_, 
-          to_node_, message_, from_node, to_node, message, node_id_, 
-          node_id_c, node_id_ch, election_message, node_id_in_message_, 
-          connected_count_in_message, election_id_in_message_, node_id_che, 
-          reply_message, reply_in_massage, election_id_in_message_c, 
-          node_id_chec, leader_message, node_id_in_message, 
-          election_id_in_message, node_id
+          connected, timeout, election_messages, reply_messages, 
+          leader_messages, lock, expected_leader, pc, stack
+
+(* define statement *)
+eventually_elect_one_leader == <>[] \A node \in 1..NODE_NUM: (is_crashed[node] \/ leader[node] = expected_leader)
+
+VARIABLES from_node_, to_node_, message_, from_node, to_node, message, 
+          node_id_, node_id_c, node_id_ch, election_message, 
+          node_id_in_message_, connected_count_in_message, 
+          election_id_in_message_, node_id_che, reply_message, 
+          reply_in_massage, election_id_in_message_c, node_id_chec, 
+          leader_message, node_id_in_message, election_id_in_message, node_id
 
 vars == << election_id, connected_count, yes_count, leader, is_crashed, 
-           connected, timeout, state, election_messages, reply_messages, 
+           connected, timeout, election_messages, reply_messages, 
            leader_messages, lock, expected_leader, pc, stack, from_node_, 
            to_node_, message_, from_node, to_node, message, node_id_, 
            node_id_c, node_id_ch, election_message, node_id_in_message_, 
@@ -383,11 +404,10 @@ Init == (* Global variables *)
         /\ is_crashed = [x \in 1..NODE_NUM |-> FALSE]
         /\ connected = [x \in 1..NODE_NUM |-> [y \in 1..NODE_NUM |-> TRUE]]
         /\ timeout = [x \in 1..NODE_NUM |-> FALSE]
-        /\ state = [x \in 1..NODE_NUM |-> 0]
         /\ election_messages = [x \in 1..NODE_NUM |-> <<>>]
         /\ reply_messages = [x \in 1..NODE_NUM |-> <<>>]
         /\ leader_messages = [x \in 1..NODE_NUM |-> <<>>]
-        /\ lock = FALSE
+        /\ lock = TRUE
         /\ expected_leader = 0
         (* Procedure send_election_message_to_all *)
         /\ from_node_ = [ self \in ProcSet |-> defaultInitValue]
@@ -434,8 +454,7 @@ start_send_election_message(self) == /\ pc[self] = "start_send_election_message"
                                                      connected_count, 
                                                      yes_count, leader, 
                                                      is_crashed, connected, 
-                                                     timeout, state, 
-                                                     reply_messages, 
+                                                     timeout, reply_messages, 
                                                      leader_messages, lock, 
                                                      expected_leader, stack, 
                                                      from_node_, to_node_, 
@@ -470,7 +489,7 @@ send_election_message(self) == /\ pc[self] = "send_election_message"
                                /\ pc' = [pc EXCEPT ![self] = "start_send_election_message"]
                                /\ UNCHANGED << election_id, connected_count, 
                                                yes_count, leader, is_crashed, 
-                                               connected, timeout, state, 
+                                               connected, timeout, 
                                                election_messages, 
                                                reply_messages, leader_messages, 
                                                lock, expected_leader, 
@@ -496,7 +515,7 @@ end_send_election_message(self) == /\ pc[self] = "end_send_election_message"
                                    /\ UNCHANGED << election_id, 
                                                    connected_count, yes_count, 
                                                    leader, is_crashed, 
-                                                   connected, timeout, state, 
+                                                   connected, timeout, 
                                                    election_messages, 
                                                    reply_messages, 
                                                    leader_messages, lock, 
@@ -531,7 +550,7 @@ start_send_leader_message(self) == /\ pc[self] = "start_send_leader_message"
                                    /\ UNCHANGED << election_id, 
                                                    connected_count, yes_count, 
                                                    leader, is_crashed, 
-                                                   connected, timeout, state, 
+                                                   connected, timeout, 
                                                    election_messages, 
                                                    reply_messages, lock, 
                                                    expected_leader, stack, 
@@ -565,7 +584,7 @@ send_leader_message(self) == /\ pc[self] = "send_leader_message"
                              /\ pc' = [pc EXCEPT ![self] = "start_send_leader_message"]
                              /\ UNCHANGED << election_id, connected_count, 
                                              yes_count, leader, is_crashed, 
-                                             connected, timeout, state, 
+                                             connected, timeout, 
                                              election_messages, reply_messages, 
                                              leader_messages, lock, 
                                              expected_leader, from_node_, 
@@ -590,7 +609,7 @@ end_send_leader_message(self) == /\ pc[self] = "end_send_leader_message"
                                  /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
                                  /\ UNCHANGED << election_id, connected_count, 
                                                  yes_count, leader, is_crashed, 
-                                                 connected, timeout, state, 
+                                                 connected, timeout, 
                                                  election_messages, 
                                                  reply_messages, 
                                                  leader_messages, lock, 
@@ -615,7 +634,6 @@ send_leader_message_to_all(self) == start_send_leader_message(self)
 
 start_new_election(self) == /\ pc[self] = "start_new_election"
                             /\ yes_count' = [yes_count EXCEPT ![node_id_[self]] = 0]
-                            /\ state' = [state EXCEPT ![node_id_[self]] = 1]
                             /\ /\ from_node_' = [from_node_ EXCEPT ![self] = node_id_[self]]
                                /\ message_' = [message_ EXCEPT ![self] = [node_id |-> node_id_[self],
                                                                          connected_count |-> connected_count[node_id_[self]],
@@ -665,10 +683,9 @@ start_check_timeout(self) == /\ pc[self] = "start_check_timeout"
                                                         timeout, stack, 
                                                         node_id_ >>
                              /\ UNCHANGED << yes_count, leader, is_crashed, 
-                                             connected, state, 
-                                             election_messages, reply_messages, 
-                                             leader_messages, lock, 
-                                             expected_leader, from_node_, 
+                                             connected, election_messages, 
+                                             reply_messages, leader_messages, 
+                                             lock, expected_leader, from_node_, 
                                              to_node_, message_, from_node, 
                                              to_node, message, node_id_c, 
                                              node_id_ch, election_message, 
@@ -688,7 +705,7 @@ end_check_timeout(self) == /\ pc[self] = "end_check_timeout"
                            /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
                            /\ UNCHANGED << election_id, connected_count, 
                                            yes_count, leader, is_crashed, 
-                                           connected, timeout, state, 
+                                           connected, timeout, 
                                            election_messages, reply_messages, 
                                            leader_messages, lock, 
                                            expected_leader, from_node_, 
@@ -756,9 +773,8 @@ start_check_election_message(self) == /\ pc[self] = "start_check_election_messag
                                       /\ UNCHANGED << connected_count, 
                                                       yes_count, leader, 
                                                       is_crashed, connected, 
-                                                      timeout, state, 
-                                                      leader_messages, lock, 
-                                                      expected_leader, 
+                                                      timeout, leader_messages, 
+                                                      lock, expected_leader, 
                                                       from_node_, to_node_, 
                                                       message_, from_node, 
                                                       to_node, message, 
@@ -784,7 +800,7 @@ end_check_election_message(self) == /\ pc[self] = "end_check_election_message"
                                     /\ UNCHANGED << election_id, 
                                                     connected_count, yes_count, 
                                                     leader, is_crashed, 
-                                                    connected, timeout, state, 
+                                                    connected, timeout, 
                                                     election_messages, 
                                                     reply_messages, 
                                                     leader_messages, lock, 
@@ -847,8 +863,7 @@ start_check_reply_message(self) == /\ pc[self] = "start_check_reply_message"
                                    /\ UNCHANGED << election_id, 
                                                    connected_count, leader, 
                                                    is_crashed, connected, 
-                                                   timeout, state, 
-                                                   election_messages, 
+                                                   timeout, election_messages, 
                                                    leader_messages, lock, 
                                                    expected_leader, from_node_, 
                                                    to_node_, message_, 
@@ -873,7 +888,7 @@ end_check_reply_message(self) == /\ pc[self] = "end_check_reply_message"
                                  /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
                                  /\ UNCHANGED << election_id, connected_count, 
                                                  yes_count, leader, is_crashed, 
-                                                 connected, timeout, state, 
+                                                 connected, timeout, 
                                                  election_messages, 
                                                  reply_messages, 
                                                  leader_messages, lock, 
@@ -901,12 +916,10 @@ start_check_leader_message(self) == /\ pc[self] = "start_check_leader_message"
                                                /\ election_id_in_message' = [election_id_in_message EXCEPT ![self] = leader_message'[self].election_id]
                                                /\ IF election_id_in_message'[self] = election_id[node_id_chec[self]]
                                                      THEN /\ leader' = [leader EXCEPT ![node_id_chec[self]] = node_id_in_message'[self]]
-                                                          /\ state' = [state EXCEPT ![node_id_chec[self]] = 2]
                                                      ELSE /\ TRUE
-                                                          /\ UNCHANGED << leader, 
-                                                                          state >>
+                                                          /\ UNCHANGED leader
                                           ELSE /\ TRUE
-                                               /\ UNCHANGED << leader, state, 
+                                               /\ UNCHANGED << leader, 
                                                                leader_messages, 
                                                                leader_message, 
                                                                node_id_in_message, 
@@ -941,8 +954,7 @@ end_check_leader_message(self) == /\ pc[self] = "end_check_leader_message"
                                   /\ UNCHANGED << election_id, connected_count, 
                                                   yes_count, leader, 
                                                   is_crashed, connected, 
-                                                  timeout, state, 
-                                                  election_messages, 
+                                                  timeout, election_messages, 
                                                   reply_messages, 
                                                   leader_messages, lock, 
                                                   expected_leader, from_node_, 
@@ -963,9 +975,9 @@ check_leader_message(self) == start_check_leader_message(self)
 
 init_run(self) == /\ pc[self] = "init_run"
                   /\ connected' = [connected EXCEPT ![node_id[self]][node_id[self]] = FALSE]
-                  /\ pc' = [pc EXCEPT ![self] = "aquire_lock"]
+                  /\ pc' = [pc EXCEPT ![self] = "check_crash"]
                   /\ UNCHANGED << election_id, connected_count, yes_count, 
-                                  leader, is_crashed, timeout, state, 
+                                  leader, is_crashed, timeout, 
                                   election_messages, reply_messages, 
                                   leader_messages, lock, expected_leader, 
                                   stack, from_node_, to_node_, message_, 
@@ -979,36 +991,17 @@ init_run(self) == /\ pc[self] = "init_run"
                                   leader_message, node_id_in_message, 
                                   election_id_in_message, node_id >>
 
-aquire_lock(self) == /\ pc[self] = "aquire_lock"
-                     /\ ~lock
-                     /\ lock' = TRUE
-                     /\ pc' = [pc EXCEPT ![self] = "check_crash"]
-                     /\ UNCHANGED << election_id, connected_count, yes_count, 
-                                     leader, is_crashed, connected, timeout, 
-                                     state, election_messages, reply_messages, 
-                                     leader_messages, expected_leader, stack, 
-                                     from_node_, to_node_, message_, from_node, 
-                                     to_node, message, node_id_, node_id_c, 
-                                     node_id_ch, election_message, 
-                                     node_id_in_message_, 
-                                     connected_count_in_message, 
-                                     election_id_in_message_, node_id_che, 
-                                     reply_message, reply_in_massage, 
-                                     election_id_in_message_c, node_id_chec, 
-                                     leader_message, node_id_in_message, 
-                                     election_id_in_message, node_id >>
-
 check_crash(self) == /\ pc[self] = "check_crash"
                      /\ IF is_crashed[node_id[self]]
                            THEN /\ lock' = FALSE
                                 /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                                 /\ node_id' = [node_id EXCEPT ![self] = Head(stack[self]).node_id]
                                 /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
-                           ELSE /\ pc' = [pc EXCEPT ![self] = "check_finish"]
+                           ELSE /\ pc' = [pc EXCEPT ![self] = "aquire_lock_and_execute"]
                                 /\ UNCHANGED << lock, stack, node_id >>
                      /\ UNCHANGED << election_id, connected_count, yes_count, 
                                      leader, is_crashed, connected, timeout, 
-                                     state, election_messages, reply_messages, 
+                                     election_messages, reply_messages, 
                                      leader_messages, expected_leader, 
                                      from_node_, to_node_, message_, from_node, 
                                      to_node, message, node_id_, node_id_c, 
@@ -1021,98 +1014,84 @@ check_crash(self) == /\ pc[self] = "check_crash"
                                      leader_message, node_id_in_message, 
                                      election_id_in_message >>
 
-check_finish(self) == /\ pc[self] = "check_finish"
-                      /\ IF \A id \in 1..NODE_NUM: (is_crashed[id]
-                                                    \/ (state[id] = 2
-                                                        /\ timeout[id] = FALSE
-                                                        /\ election_messages[id] = <<>>
-                                                        /\ reply_messages[id] = <<>>
-                                                        /\ leader_messages[id] = <<>>))
-                            THEN /\ lock' = FALSE
-                                 /\ Assert((leader[node_id[self]] = expected_leader), 
-                                           "Failure of assertion at line 208, column 13.")
-                                 /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
-                                 /\ node_id' = [node_id EXCEPT ![self] = Head(stack[self]).node_id]
-                                 /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
-                            ELSE /\ pc' = [pc EXCEPT ![self] = "start_run"]
-                                 /\ UNCHANGED << lock, stack, node_id >>
-                      /\ UNCHANGED << election_id, connected_count, yes_count, 
-                                      leader, is_crashed, connected, timeout, 
-                                      state, election_messages, reply_messages, 
-                                      leader_messages, expected_leader, 
-                                      from_node_, to_node_, message_, 
-                                      from_node, to_node, message, node_id_, 
-                                      node_id_c, node_id_ch, election_message, 
-                                      node_id_in_message_, 
-                                      connected_count_in_message, 
-                                      election_id_in_message_, node_id_che, 
-                                      reply_message, reply_in_massage, 
-                                      election_id_in_message_c, node_id_chec, 
-                                      leader_message, node_id_in_message, 
-                                      election_id_in_message >>
-
-start_run(self) == /\ pc[self] = "start_run"
-                   /\ \/ /\ /\ node_id_c' = [node_id_c EXCEPT ![self] = node_id[self]]
-                            /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "check_timeout",
-                                                                     pc        |->  "release_lock",
-                                                                     node_id_c |->  node_id_c[self] ] >>
-                                                                 \o stack[self]]
-                         /\ pc' = [pc EXCEPT ![self] = "start_check_timeout"]
-                         /\ UNCHANGED <<node_id_ch, election_message, node_id_in_message_, connected_count_in_message, election_id_in_message_, node_id_che, reply_message, reply_in_massage, election_id_in_message_c, node_id_chec, leader_message, node_id_in_message, election_id_in_message>>
-                      \/ /\ /\ node_id_ch' = [node_id_ch EXCEPT ![self] = node_id[self]]
-                            /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "check_election_message",
-                                                                     pc        |->  "release_lock",
-                                                                     election_message |->  election_message[self],
-                                                                     node_id_in_message_ |->  node_id_in_message_[self],
-                                                                     connected_count_in_message |->  connected_count_in_message[self],
-                                                                     election_id_in_message_ |->  election_id_in_message_[self],
-                                                                     node_id_ch |->  node_id_ch[self] ] >>
-                                                                 \o stack[self]]
-                         /\ election_message' = [election_message EXCEPT ![self] = defaultInitValue]
-                         /\ node_id_in_message_' = [node_id_in_message_ EXCEPT ![self] = defaultInitValue]
-                         /\ connected_count_in_message' = [connected_count_in_message EXCEPT ![self] = defaultInitValue]
-                         /\ election_id_in_message_' = [election_id_in_message_ EXCEPT ![self] = defaultInitValue]
-                         /\ pc' = [pc EXCEPT ![self] = "start_check_election_message"]
-                         /\ UNCHANGED <<node_id_c, node_id_che, reply_message, reply_in_massage, election_id_in_message_c, node_id_chec, leader_message, node_id_in_message, election_id_in_message>>
-                      \/ /\ /\ node_id_che' = [node_id_che EXCEPT ![self] = node_id[self]]
-                            /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "check_reply_message",
-                                                                     pc        |->  "release_lock",
-                                                                     reply_message |->  reply_message[self],
-                                                                     reply_in_massage |->  reply_in_massage[self],
-                                                                     election_id_in_message_c |->  election_id_in_message_c[self],
-                                                                     node_id_che |->  node_id_che[self] ] >>
-                                                                 \o stack[self]]
-                         /\ reply_message' = [reply_message EXCEPT ![self] = defaultInitValue]
-                         /\ reply_in_massage' = [reply_in_massage EXCEPT ![self] = defaultInitValue]
-                         /\ election_id_in_message_c' = [election_id_in_message_c EXCEPT ![self] = defaultInitValue]
-                         /\ pc' = [pc EXCEPT ![self] = "start_check_reply_message"]
-                         /\ UNCHANGED <<node_id_c, node_id_ch, election_message, node_id_in_message_, connected_count_in_message, election_id_in_message_, node_id_chec, leader_message, node_id_in_message, election_id_in_message>>
-                      \/ /\ /\ node_id_chec' = [node_id_chec EXCEPT ![self] = node_id[self]]
-                            /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "check_leader_message",
-                                                                     pc        |->  "release_lock",
-                                                                     leader_message |->  leader_message[self],
-                                                                     node_id_in_message |->  node_id_in_message[self],
-                                                                     election_id_in_message |->  election_id_in_message[self],
-                                                                     node_id_chec |->  node_id_chec[self] ] >>
-                                                                 \o stack[self]]
-                         /\ leader_message' = [leader_message EXCEPT ![self] = defaultInitValue]
-                         /\ node_id_in_message' = [node_id_in_message EXCEPT ![self] = defaultInitValue]
-                         /\ election_id_in_message' = [election_id_in_message EXCEPT ![self] = defaultInitValue]
-                         /\ pc' = [pc EXCEPT ![self] = "start_check_leader_message"]
-                         /\ UNCHANGED <<node_id_c, node_id_ch, election_message, node_id_in_message_, connected_count_in_message, election_id_in_message_, node_id_che, reply_message, reply_in_massage, election_id_in_message_c>>
-                   /\ UNCHANGED << election_id, connected_count, yes_count, 
-                                   leader, is_crashed, connected, timeout, 
-                                   state, election_messages, reply_messages, 
-                                   leader_messages, lock, expected_leader, 
-                                   from_node_, to_node_, message_, from_node, 
-                                   to_node, message, node_id_, node_id >>
+aquire_lock_and_execute(self) == /\ pc[self] = "aquire_lock_and_execute"
+                                 /\ \/ /\ timeout[node_id[self]]
+                                       /\ ~lock
+                                       /\ lock' = TRUE
+                                       /\ /\ node_id_c' = [node_id_c EXCEPT ![self] = node_id[self]]
+                                          /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "check_timeout",
+                                                                                   pc        |->  "release_lock",
+                                                                                   node_id_c |->  node_id_c[self] ] >>
+                                                                               \o stack[self]]
+                                       /\ pc' = [pc EXCEPT ![self] = "start_check_timeout"]
+                                       /\ UNCHANGED <<node_id_ch, election_message, node_id_in_message_, connected_count_in_message, election_id_in_message_, node_id_che, reply_message, reply_in_massage, election_id_in_message_c, node_id_chec, leader_message, node_id_in_message, election_id_in_message>>
+                                    \/ /\ election_messages[node_id[self]] /= <<>>
+                                       /\ ~lock
+                                       /\ lock' = TRUE
+                                       /\ /\ node_id_ch' = [node_id_ch EXCEPT ![self] = node_id[self]]
+                                          /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "check_election_message",
+                                                                                   pc        |->  "release_lock",
+                                                                                   election_message |->  election_message[self],
+                                                                                   node_id_in_message_ |->  node_id_in_message_[self],
+                                                                                   connected_count_in_message |->  connected_count_in_message[self],
+                                                                                   election_id_in_message_ |->  election_id_in_message_[self],
+                                                                                   node_id_ch |->  node_id_ch[self] ] >>
+                                                                               \o stack[self]]
+                                       /\ election_message' = [election_message EXCEPT ![self] = defaultInitValue]
+                                       /\ node_id_in_message_' = [node_id_in_message_ EXCEPT ![self] = defaultInitValue]
+                                       /\ connected_count_in_message' = [connected_count_in_message EXCEPT ![self] = defaultInitValue]
+                                       /\ election_id_in_message_' = [election_id_in_message_ EXCEPT ![self] = defaultInitValue]
+                                       /\ pc' = [pc EXCEPT ![self] = "start_check_election_message"]
+                                       /\ UNCHANGED <<node_id_c, node_id_che, reply_message, reply_in_massage, election_id_in_message_c, node_id_chec, leader_message, node_id_in_message, election_id_in_message>>
+                                    \/ /\ reply_messages[node_id[self]] /= <<>>
+                                       /\ ~lock
+                                       /\ lock' = TRUE
+                                       /\ /\ node_id_che' = [node_id_che EXCEPT ![self] = node_id[self]]
+                                          /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "check_reply_message",
+                                                                                   pc        |->  "release_lock",
+                                                                                   reply_message |->  reply_message[self],
+                                                                                   reply_in_massage |->  reply_in_massage[self],
+                                                                                   election_id_in_message_c |->  election_id_in_message_c[self],
+                                                                                   node_id_che |->  node_id_che[self] ] >>
+                                                                               \o stack[self]]
+                                       /\ reply_message' = [reply_message EXCEPT ![self] = defaultInitValue]
+                                       /\ reply_in_massage' = [reply_in_massage EXCEPT ![self] = defaultInitValue]
+                                       /\ election_id_in_message_c' = [election_id_in_message_c EXCEPT ![self] = defaultInitValue]
+                                       /\ pc' = [pc EXCEPT ![self] = "start_check_reply_message"]
+                                       /\ UNCHANGED <<node_id_c, node_id_ch, election_message, node_id_in_message_, connected_count_in_message, election_id_in_message_, node_id_chec, leader_message, node_id_in_message, election_id_in_message>>
+                                    \/ /\ leader_messages[node_id[self]] /= <<>>
+                                       /\ ~lock
+                                       /\ lock' = TRUE
+                                       /\ /\ node_id_chec' = [node_id_chec EXCEPT ![self] = node_id[self]]
+                                          /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "check_leader_message",
+                                                                                   pc        |->  "release_lock",
+                                                                                   leader_message |->  leader_message[self],
+                                                                                   node_id_in_message |->  node_id_in_message[self],
+                                                                                   election_id_in_message |->  election_id_in_message[self],
+                                                                                   node_id_chec |->  node_id_chec[self] ] >>
+                                                                               \o stack[self]]
+                                       /\ leader_message' = [leader_message EXCEPT ![self] = defaultInitValue]
+                                       /\ node_id_in_message' = [node_id_in_message EXCEPT ![self] = defaultInitValue]
+                                       /\ election_id_in_message' = [election_id_in_message EXCEPT ![self] = defaultInitValue]
+                                       /\ pc' = [pc EXCEPT ![self] = "start_check_leader_message"]
+                                       /\ UNCHANGED <<node_id_c, node_id_ch, election_message, node_id_in_message_, connected_count_in_message, election_id_in_message_, node_id_che, reply_message, reply_in_massage, election_id_in_message_c>>
+                                 /\ UNCHANGED << election_id, connected_count, 
+                                                 yes_count, leader, is_crashed, 
+                                                 connected, timeout, 
+                                                 election_messages, 
+                                                 reply_messages, 
+                                                 leader_messages, 
+                                                 expected_leader, from_node_, 
+                                                 to_node_, message_, from_node, 
+                                                 to_node, message, node_id_, 
+                                                 node_id >>
 
 release_lock(self) == /\ pc[self] = "release_lock"
                       /\ lock' = FALSE
-                      /\ pc' = [pc EXCEPT ![self] = "aquire_lock"]
+                      /\ pc' = [pc EXCEPT ![self] = "check_crash"]
                       /\ UNCHANGED << election_id, connected_count, yes_count, 
                                       leader, is_crashed, connected, timeout, 
-                                      state, election_messages, reply_messages, 
+                                      election_messages, reply_messages, 
                                       leader_messages, expected_leader, stack, 
                                       from_node_, to_node_, message_, 
                                       from_node, to_node, message, node_id_, 
@@ -1125,102 +1104,21 @@ release_lock(self) == /\ pc[self] = "release_lock"
                                       leader_message, node_id_in_message, 
                                       election_id_in_message, node_id >>
 
-run(self) == init_run(self) \/ aquire_lock(self) \/ check_crash(self)
-                \/ check_finish(self) \/ start_run(self)
-                \/ release_lock(self)
+run(self) == init_run(self) \/ check_crash(self)
+                \/ aquire_lock_and_execute(self) \/ release_lock(self)
 
 start_process(self) == /\ pc[self] = "start_process"
                        /\ IF self = NODE_NUM+1
-                             THEN /\ \/ /\ is_crashed' = [is_crashed EXCEPT ![1] = TRUE]
-                                        /\ timeout' = <<FALSE, TRUE, TRUE, TRUE>>
-                                        /\ expected_leader' = 2
-                                        /\ connected' =              <<
-                                                            <<FALSE, FALSE, FALSE, FALSE>>,
-                                                            <<FALSE, FALSE, TRUE, TRUE>>,
-                                                            <<FALSE, TRUE, FALSE, TRUE>>,
-                                                            <<FALSE, TRUE, TRUE, FALSE>>
-                                                        >>
-                                     \/ /\ is_crashed' = [is_crashed EXCEPT ![2] = TRUE]
-                                        /\ timeout' = <<TRUE, FALSE, TRUE, TRUE>>
-                                        /\ expected_leader' = 1
-                                        /\ connected' =              <<
-                                                            <<FALSE, FALSE, TRUE, TRUE>>,
-                                                            <<FALSE, FALSE, FALSE, FALSE>>,
-                                                            <<TRUE, FALSE, FALSE, TRUE>>,
-                                                            <<TRUE, FALSE, TRUE, FALSE>>
-                                                        >>
-                                     \/ /\ is_crashed' = [is_crashed EXCEPT ![3] = TRUE]
-                                        /\ timeout' = <<TRUE, TRUE, FALSE, TRUE>>
-                                        /\ expected_leader' = 1
-                                        /\ connected' =              <<
-                                                            <<FALSE, TRUE, FALSE, TRUE>>,
-                                                            <<TRUE, FALSE, FALSE, TRUE>>,
-                                                            <<FALSE, FALSE, FALSE, FALSE>>,
-                                                            <<TRUE, TRUE, FALSE, FALSE>>
-                                                        >>
-                                     \/ /\ is_crashed' = [is_crashed EXCEPT ![4] = TRUE]
-                                        /\ timeout' = <<TRUE, TRUE, TRUE, FALSE>>
-                                        /\ expected_leader' = 1
-                                        /\ connected' =              <<
-                                                            <<FALSE, TRUE, TRUE, FALSE>>,
-                                                            <<TRUE, FALSE, TRUE, FALSE>>,
-                                                            <<TRUE, TRUE, FALSE, FALSE>>,
-                                                            <<FALSE, FALSE, FALSE, FALSE>>
-                                                        >>
-                                     \/ /\ timeout' = <<TRUE, TRUE, FALSE, FALSE>>
-                                        /\ expected_leader' = 3
-                                        /\ connected' =              <<
-                                                            <<FALSE, FALSE, TRUE, TRUE>>,
-                                                            <<FALSE, FALSE, TRUE, TRUE>>,
-                                                            <<TRUE, TRUE, FALSE, TRUE>>,
-                                                            <<TRUE, TRUE, TRUE, FALSE>>
-                                                        >>
-                                        /\ UNCHANGED is_crashed
-                                     \/ /\ timeout' = <<TRUE, FALSE, TRUE, FALSE>>
-                                        /\ expected_leader' = 2
-                                        /\ connected' =              <<
-                                                            <<FALSE, TRUE, FALSE, TRUE>>,
-                                                            <<TRUE, FALSE, TRUE, TRUE>>,
-                                                            <<FALSE, TRUE, FALSE, TRUE>>,
-                                                            <<TRUE, TRUE, TRUE, FALSE>>
-                                                        >>
-                                        /\ UNCHANGED is_crashed
-                                     \/ /\ timeout' = <<TRUE, FALSE, FALSE, TRUE>>
-                                        /\ expected_leader' = 2
-                                        /\ connected' =              <<
-                                                            <<FALSE, TRUE, TRUE, FALSE>>,
-                                                            <<TRUE, FALSE, TRUE, TRUE>>,
-                                                            <<TRUE, TRUE, FALSE, TRUE>>,
-                                                            <<FALSE, TRUE, TRUE, FALSE>>
-                                                        >>
-                                        /\ UNCHANGED is_crashed
-                                     \/ /\ timeout' = <<FALSE, TRUE, TRUE, FALSE>>
-                                        /\ expected_leader' = 1
-                                        /\ connected' =              <<
-                                                            <<FALSE, TRUE, TRUE, TRUE>>,
-                                                            <<TRUE, FALSE, FALSE, TRUE>>,
-                                                            <<TRUE, FALSE, FALSE, TRUE>>,
-                                                            <<TRUE, TRUE, TRUE, FALSE>>
-                                                        >>
-                                        /\ UNCHANGED is_crashed
-                                     \/ /\ timeout' = <<FALSE, TRUE, FALSE, TRUE>>
-                                        /\ expected_leader' = 1
-                                        /\ connected' =              <<
-                                                            <<FALSE, TRUE, TRUE, TRUE>>,
-                                                            <<TRUE, FALSE, TRUE, FALSE>>,
-                                                            <<TRUE, TRUE, FALSE, TRUE>>,
-                                                            <<TRUE, FALSE, TRUE, FALSE>>
-                                                        >>
-                                        /\ UNCHANGED is_crashed
-                                     \/ /\ timeout' = <<FALSE, FALSE, TRUE, TRUE>>
-                                        /\ expected_leader' = 1
-                                        /\ connected' =              <<
-                                                            <<FALSE, TRUE, TRUE, TRUE>>,
-                                                            <<TRUE, FALSE, TRUE, TRUE>>,
-                                                            <<TRUE, TRUE, FALSE, FALSE>>,
-                                                            <<TRUE, TRUE, FALSE, FALSE>>
-                                                        >>
-                                        /\ UNCHANGED is_crashed
+                             THEN /\ is_crashed' = [is_crashed EXCEPT ![1] = TRUE]
+                                  /\ timeout' = <<FALSE, TRUE, TRUE, TRUE>>
+                                  /\ expected_leader' = 2
+                                  /\ connected' =              <<
+                                                      <<FALSE, FALSE, FALSE, FALSE>>,
+                                                      <<FALSE, FALSE, TRUE, TRUE>>,
+                                                      <<FALSE, TRUE, FALSE, TRUE>>,
+                                                      <<FALSE, TRUE, TRUE, FALSE>>
+                                                  >>
+                                  /\ lock' = FALSE
                                   /\ pc' = [pc EXCEPT ![self] = "Done"]
                                   /\ UNCHANGED << stack, node_id >>
                              ELSE /\ /\ node_id' = [node_id EXCEPT ![self] = self]
@@ -1230,10 +1128,11 @@ start_process(self) == /\ pc[self] = "start_process"
                                                                           \o stack[self]]
                                   /\ pc' = [pc EXCEPT ![self] = "init_run"]
                                   /\ UNCHANGED << is_crashed, connected, 
-                                                  timeout, expected_leader >>
+                                                  timeout, lock, 
+                                                  expected_leader >>
                        /\ UNCHANGED << election_id, connected_count, yes_count, 
-                                       leader, state, election_messages, 
-                                       reply_messages, leader_messages, lock, 
+                                       leader, election_messages, 
+                                       reply_messages, leader_messages, 
                                        from_node_, to_node_, message_, 
                                        from_node, to_node, message, node_id_, 
                                        node_id_c, node_id_ch, election_message, 
@@ -1261,12 +1160,12 @@ Next == (\E self \in ProcSet:  \/ send_election_message_to_all(self)
            \/ Terminating
 
 Spec == /\ Init /\ [][Next]_vars
-        /\ \A self \in 1..NODE_NUM+1 : /\ SF_vars(N(self))
-                                       /\ SF_vars(run(self))
-                                       /\ SF_vars(send_election_message_to_all(self))                                       /\ SF_vars(send_leader_message_to_all(self))                                       /\ SF_vars(new_election(self))
-                                       /\ SF_vars(check_timeout(self))
-                                       /\ SF_vars(check_election_message(self))                                       /\ SF_vars(check_reply_message(self))
-                                       /\ SF_vars(check_leader_message(self))
+        /\ \A self \in 1..NODE_NUM+1 : /\ WF_vars(N(self))
+                                       /\ WF_vars(run(self))
+                                       /\ WF_vars(send_election_message_to_all(self))                                       /\ WF_vars(send_leader_message_to_all(self))                                       /\ WF_vars(new_election(self))
+                                       /\ WF_vars(check_timeout(self))
+                                       /\ WF_vars(check_election_message(self))                                       /\ WF_vars(check_reply_message(self))
+                                       /\ WF_vars(check_leader_message(self))
 
 Termination == <>(\A self \in ProcSet: pc[self] = "Done")
 
