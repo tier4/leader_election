@@ -26,6 +26,7 @@ define
     eventually_elect_one_leader == <>[] \A node \in 1..NODE_NUM: (is_crashed[node] \/ leader[node] = expected_leader)
 end define
 
+\* recursive function for sending election messages to all nodes
 procedure send_election_message_to_all(from_node, to_node, message)
 begin
     start_send_election_message:
@@ -41,6 +42,7 @@ begin
         return;
 end procedure;
 
+\* recursive function for sending leader messages to all nodes
 procedure send_leader_message_to_all(from_node, to_node, message)
 begin
     start_send_leader_message:
@@ -56,6 +58,7 @@ begin
         return;
 end procedure;
 
+\* function for starting election
 procedure new_election(node_id)
 begin
     start_new_election:
@@ -68,6 +71,7 @@ begin
         return;
 end procedure;
 
+\* function for checking timeout
 procedure check_timeout(node_id)
 begin
     start_check_timeout:
@@ -82,6 +86,7 @@ begin
         return;
 end procedure;
 
+\* function for checking election messages
 procedure check_election_message(node_id)
 variables
     election_message,
@@ -97,9 +102,12 @@ begin
             connected_count_in_message := election_message.connected_count;
             election_id_in_message := election_message.election_id;
 
+            \* if election_id in msg is bigger than mine, start new election
             if election_id_in_message > election_id[node_id] then
                 election_id[node_id] := election_id_in_message;
                 call new_election(node_id);
+
+            \* if election_id in msg the same as mine, send reply message
             elsif election_id_in_message = election_id[node_id] then
                 if connected_count_in_message > connected_count[node_id] then
                     \* reply Yes
@@ -131,6 +139,7 @@ begin
         return;
 end procedure;
 
+\* function for checking reply messages
 procedure check_reply_message(node_id)
 variables
     reply_message,
@@ -144,9 +153,11 @@ begin
             reply_in_massage := reply_message.yes;
             election_id_in_message := reply_message.election_id;
 
+            \* if election_id is the same and the reply is YES, increment YES count
             if election_id_in_message = election_id[node_id] /\ reply_in_massage then
                 yes_count[node_id] := yes_count[node_id] + 1;
 
+                \* if YES count increses to connected_count, send leader message to all nodes
                 if yes_count[node_id] = connected_count[node_id] then
                     call send_leader_message_to_all(node_id, 1,
                             [node_id |-> node_id,
@@ -159,6 +170,7 @@ begin
         return;
 end procedure;
 
+\* function for checking leader messages
 procedure check_leader_message(node_id)
 variables
     leader_message,
@@ -172,6 +184,7 @@ begin
             node_id_in_message := leader_message.node_id;
             election_id_in_message := leader_message.election_id;
 
+            \* if election_id is the same, update the leader
             if election_id_in_message = election_id[node_id] then
                 leader[node_id] := node_id_in_message;
             end if;
@@ -192,6 +205,7 @@ begin
             return;
         end if;
 
+    \* represent non-deterministic execution
     aquire_lock_and_execute:
         either
             await timeout[node_id];
@@ -220,6 +234,9 @@ begin
         goto check_crash;
 end procedure;
 
+\* Process 1..NODE_NUM represent the nodes.
+\* Process NODE_NUM+1 represents dummy process which invoke node or link crashes.
+\* Please initialize is_crashed, timeout, expected_leader and connected variables manually.
 fair process N \in 1..NODE_NUM+1
 begin
     start_process:
