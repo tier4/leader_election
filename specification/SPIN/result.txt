@@ -1,0 +1,58 @@
+$ ./pan
+
+warning: never claim + accept labels requires -a flag to fully verify
+Depth=     491 States=    1e+06 Transitions=  3.5e+06 Memory=   403.730 t=     4.96 R=   2e+05
+Depth=     491 States=    2e+06 Transitions= 7.13e+06 Memory=   678.827 t=     10.1 R=   2e+05
+Depth=     491 States=    3e+06 Transitions= 1.08e+07 Memory=   953.925 t=     15.3 R=   2e+05
+Depth=     491 States=    4e+06 Transitions= 1.44e+07 Memory=  1229.022 t=     20.5 R=   2e+05
+Depth=     491 States=    5e+06 Transitions=  1.8e+07 Memory=  1504.120 t=     25.7 R=   2e+05
+Depth=     491 States=    6e+06 Transitions= 2.17e+07 Memory=  1779.218 t=     30.9 R=   2e+05
+Depth=     491 States=    7e+06 Transitions= 2.53e+07 Memory=  2054.315 t=     36.1 R=   2e+05
+Depth=     491 States=    8e+06 Transitions=  2.9e+07 Memory=  2329.413 t=     41.4 R=   2e+05
+Depth=     491 States=    9e+06 Transitions= 3.26e+07 Memory=  2604.511 t=     46.6 R=   2e+05
+Depth=     491 States=    1e+07 Transitions= 3.62e+07 Memory=  2879.511 t=     51.9 R=   2e+05
+Depth=     491 States=  1.1e+07 Transitions= 3.98e+07 Memory=  3154.608 t=     57.1 R=   2e+05
+Depth=     491 States=  1.2e+07 Transitions= 4.35e+07 Memory=  3429.706 t=     62.4 R=   2e+05
+Depth=     491 States=  1.3e+07 Transitions= 4.71e+07 Memory=  3704.804 t=     67.6 R=   2e+05
+Depth=     491 States=  1.4e+07 Transitions= 5.08e+07 Memory=  3979.901 t=       73 R=   2e+05
+Depth=     491 States=  1.5e+07 Transitions= 5.44e+07 Memory=  4254.999 t=     78.2 R=   2e+05
+Depth=     491 States=  1.6e+07 Transitions=  5.8e+07 Memory=  4530.097 t=     83.5 R=   2e+05
+Depth=     491 States=  1.7e+07 Transitions= 6.17e+07 Memory=  4805.194 t=     88.8 R=   2e+05
+
+(Spin Version 6.5.2 -- 6 December 2019)
+        + Partial Order Reduction
+
+Full statespace search for:
+        never claim             + (p)
+        assertion violations    + (if within scope of claim)
+        acceptance   cycles     - (not selected)
+        invalid end states      - (disabled by never claim)
+
+State-vector 324 byte, depth reached 491, errors: 0
+ 17773786 states, stored
+ 46710062 states, matched
+ 64483848 transitions (= stored+matched)
+1.3846773e+08 atomic steps
+hash conflicts:   2794141 (resolved)
+
+Stats on memory usage (in Megabytes):
+ 5966.542       equivalent memory usage for states (stored*(State-vector + overhead))
+ 4897.166       actual memory usage for states (compression: 82.08%)
+                state-vector as stored = 261 byte + 28 byte overhead
+  128.000       memory used for hash table (-w24)
+    0.534       memory used for DFS stack (-m10000)
+    7.713       memory lost to fragmentation
+ 5017.987       total actual memory usage
+
+
+unreached in proctype node
+        leader_election.pml:128, state 111, "-end-"
+        (1 of 111 states)
+unreached in init
+        (0 of 84 states)
+unreached in claim p
+        _spin_nvr.tmp:10, state 13, "-end-"
+        (1 of 13 states)
+
+pan: elapsed time 92.9 seconds
+pan: rate 191280.52 states/second
