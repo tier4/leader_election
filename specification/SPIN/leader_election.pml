@@ -27,6 +27,7 @@ inline new_election(id) {
         :: connected[id].arr[i] ->
             network[i]!Election(id, election_ids[id], connected_count[id]);
         :: else ->
+            ; // do nothing
         fi
     }
 }
@@ -52,7 +53,7 @@ inline onElection(id, node_id, election_id, count) {
             :: node_id < id ->
                 network[node_id]!Reply(id, election_id, 1);
             :: node_id == id ->
-                printf("invalid");
+                assert(false);
             :: node_id > id ->
                 network[node_id]!Reply(id, election_id, 0);
             fi
@@ -60,14 +61,14 @@ inline onElection(id, node_id, election_id, count) {
             network[node_id]!Reply(id, election_id, 0);
         fi
     :: election_id < election_ids[id] ->
-        ;
+        ; // do nothing
     fi
 }
 
 inline onReply(id, node_id, election_id, yes) {
     if
     :: election_id > election_ids[id] ->
-        printf("invalid");
+        assert(false);
     :: election_id == election_ids[id] ->
         if
         :: yes == 1 ->
@@ -81,28 +82,28 @@ inline onReply(id, node_id, election_id, yes) {
                     :: i != id && connected[id].arr[i] ->
                         network[i]!Leader(id, election_id, 0);
                     :: else ->
-                        ;
+                        ; // do nothing
                     fi
                 }
             :: else ->
-                ;
+                ; // do nothing
             fi
         :: else ->
-            ;
+            ; // do nothing
         fi
     :: election_id < election_ids[id] ->
-        ;
+        ; // do nothing
     fi
 }
 
 inline onLeader(id, node_id, election_id) {
     if
     :: election_id > election_ids[id] ->
-        printf("invalid");
+        assert(false);
     :: election_id == election_ids[id] ->
         leader[id] = node_id;
     :: election_id < election_ids[id] ->
-        ;
+        ; // do nothing
     fi
 }
 
@@ -132,10 +133,8 @@ proctype node(byte id) {
 
 init {
     byte i, j;
-
     for (i : 0..3) {
         connected_count[i] = 3;
-
         for (j : 0..3) {
             if
             :: i == j ->
