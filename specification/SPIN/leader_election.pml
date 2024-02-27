@@ -52,18 +52,18 @@ inline onElection(id, node_id, election_id, count) {
     :: election_id == election_ids[id] ->
         if
         :: count > connected_count[id] ->
-            network[node_id]!Reply(id, election_id, 1);
+            network[node_id]!Reply(id, election_id, 1); // reply yes
         :: count == connected_count[id] ->
             if
             :: node_id < id ->
-                network[node_id]!Reply(id, election_id, 1);
+                network[node_id]!Reply(id, election_id, 1); // reply yes
             :: node_id == id ->
                 assert(false);
             :: node_id > id ->
-                network[node_id]!Reply(id, election_id, 0);
+                network[node_id]!Reply(id, election_id, 0); // reply no
             fi
         :: count < connected_count[id] ->
-            network[node_id]!Reply(id, election_id, 0);
+            network[node_id]!Reply(id, election_id, 0); // reply no
         fi
     :: election_id < election_ids[id] ->
         ; // do nothing
@@ -79,7 +79,7 @@ inline onReply(id, node_id, election_id, yes) {
         :: yes == 1 ->
             yes_count[id] = yes_count[id] + 1;
             if
-            :: yes_count[id] == connected_count[id] ->
+            :: yes_count[id] == connected_count[id] -> // id can be a new leader!
                 leader[id] = id;
                 byte i;
                 for (i : 0..3) {
@@ -115,6 +115,7 @@ inline onLeader(id, node_id, election_id) {
 proctype node(byte id) {
     main_loop:
 
+    // represent non-deterministic behaviors
     atomic {
         byte node_id, election_id, count, yes;
         if
@@ -139,6 +140,7 @@ proctype node(byte id) {
 }
 
 init {
+    // Initialize
     byte i, j;
     for (i : 0..3) {
         connected_count[i] = 3;
@@ -152,6 +154,7 @@ init {
         }
     }
 
+    // invoke a crash
     if
     :: 1 == 1 ->
         // example 1: node 0 crash
@@ -213,6 +216,7 @@ init {
         network[3]!Timeout(2, 0, 0);
     fi
 
+    // start each process
     for (i : 0..3) {
         run node(i);
     }
