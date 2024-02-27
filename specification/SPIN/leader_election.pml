@@ -44,6 +44,11 @@ inline onElection(id, node_id, election_id, count) {
     :: election_id > election_ids[id] ->
         election_ids[id] = election_id;
         new_election(id);
+    :: else ->
+        ; // do nothing 
+    fi
+
+    if
     :: election_id == election_ids[id] ->
         if
         :: count > connected_count[id] ->
