@@ -113,7 +113,7 @@ proctype node(byte id) {
         byte node_id, election_id, count, yes;
         if
         :: crash[id] == 1 ->
-            goto end
+            ;
         :: network[id]?Timeout(node_id, _, _) ->
             onTimeout(id, node_id);
         :: network[id]?Election(node_id, election_id, count) ->
@@ -123,14 +123,11 @@ proctype node(byte id) {
         :: network[id]?Leader(node_id, election_id, _) ->
             onLeader(id, node_id, election_id);
         :: finished_election ->
-            goto end;
+            ;
         fi
     }
 
     goto main_loop
-
-    end:
-        ;
 }
 
 init {
