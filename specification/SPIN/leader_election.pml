@@ -114,7 +114,7 @@ proctype node(byte id) {
         byte node_id, election_id, count, yes;
         if
         :: crash[id] == 1 ->
-            ;
+            goto end;
         :: network[id]?Timeout(node_id, _, _) ->
             onTimeout(id, node_id);
         :: network[id]?Election(node_id, election_id, count) ->
@@ -124,11 +124,13 @@ proctype node(byte id) {
         :: network[id]?Leader(node_id, election_id, _) ->
             onLeader(id, node_id, election_id);
         :: finished_election ->
-            ;
+            goto end;
         fi
     }
 
     goto main_loop
+
+    end:
 }
 
 init {
@@ -212,9 +214,9 @@ init {
 }
 
 
-#define elect_leader0 (crash[0] == 1 || leader[0] == expected_leader)
-#define elect_leader1 (crash[1] == 1 || leader[1] == expected_leader)
-#define elect_leader2 (crash[2] == 1 || leader[2] == expected_leader)
-#define elect_leader3 (crash[3] == 1 || leader[3] == expected_leader)
+#define elect_leader0 (node[0]@end && leader[0] == expected_leader)
+#define elect_leader1 (node[1]@end && leader[1] == expected_leader)
+#define elect_leader2 (node[2]@end && leader[2] == expected_leader)
+#define elect_leader3 (node[3]@end && leader[3] == expected_leader)
 #define elect_same_leader (elect_leader0 && elect_leader1 && elect_leader2 && elect_leader3)
 ltl p { []<>elect_same_leader }
