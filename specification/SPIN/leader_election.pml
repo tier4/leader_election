@@ -15,9 +15,8 @@ byte election_ids[NODE_NUM]
 byte yes_count[NODE_NUM]
 byte leader[NODE_NUM]
 byte expected_leader
-byte started
 
-#define finished_election (started == 1 && len(network[0]) == 0 && len(network[1]) == 0 && len(network[2]) == 0 && len(network[3]) == 0)
+#define finished_election (len(network[0]) == 0 && len(network[1]) == 0 && len(network[2]) == 0 && len(network[3]) == 0)
 
 inline new_election(id) {
     yes_count[id] = 0;
@@ -211,8 +210,6 @@ init {
         network[3]!Timeout(2, 0, 0);
     fi
 
-    started = 1;
-
     for (i : 0..3) {
         run node(i);
     }
@@ -224,4 +221,4 @@ init {
 #define elect_leader2 (crash[2] == 1 || leader[2] == expected_leader)
 #define elect_leader3 (crash[3] == 1 || leader[3] == expected_leader)
 #define elect_same_leader (elect_leader0 && elect_leader1 && elect_leader2 && elect_leader3)
-ltl p { started == 1 -> []<>elect_same_leader }
+ltl p { []<>elect_same_leader }
