@@ -3,7 +3,7 @@
 
 // This is for representing multiarray for connected_count
 typedef array {
-    byte arr[NODE_NUM]
+    bool arr[NODE_NUM]
 };
 
 mtype = {Timeout, Election, Reply, Leader}
@@ -34,7 +34,7 @@ inline new_election(id) {
 
 inline onTimeout(id, node_id) {
     connected_count[id] = connected_count[id] - 1;
-    connected[id].arr[node_id] = 0;
+    connected[id].arr[node_id] = false;
     election_ids[id] = election_ids[id] + 1;
     new_election(id);
 }
@@ -146,9 +146,9 @@ init {
         for (j : 0..3) {
             if
             :: i == j ->
-                connected[i].arr[j] = 0;
+                connected[i].arr[j] = false;
             :: else ->
-                connected[i].arr[j] = 1;
+                connected[i].arr[j] = true;
             fi
         }
     }
