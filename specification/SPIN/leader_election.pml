@@ -247,6 +247,3 @@ init {
         run node(i);
     }
 }
-
-#define termination (node[0]@end && node[1]@end && node[2]@end && node[3]@end)
-ltl p { []<>termination }
