@@ -22,7 +22,7 @@ inline new_election(id) {
     yes_count[id] = 0;
     
     byte i;
-    for (i : 0..3) {
+    for (i : 0..(NODE_NUM-1)) {
         if
         :: connected[id].arr[i] ->
             network[i]!Election(id, election_ids[id], connected_count[id]);
@@ -141,9 +141,9 @@ proctype node(byte id) {
 init {
     // Initialize
     byte i, j;
-    for (i : 0..3) {
-        connected_count[i] = 3;
-        for (j : 0..3) {
+    for (i : 0..(NODE_NUM-1)) {
+        connected_count[i] = NODE_NUM - 1;
+        for (j : 0..(NODE_NUM-1)) {
             if
             :: i == j ->
                 connected[i].arr[j] = false;
@@ -241,7 +241,7 @@ init {
     fi
 
     // start each process
-    for (i : 0..3) {
+    for (i : 0..(NODE_NUM-1)) {
         if
         :: !crash[i] ->
             run node(i);
