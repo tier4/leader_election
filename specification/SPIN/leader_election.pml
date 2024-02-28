@@ -216,8 +216,12 @@ init {
     :: true ->
         // example 11: link 0-2 & link 0-3 crash
         expected_leader = 1;
-        network[0]!Timeout(2, 0, 0);
-        network[0]!Timeout(3, 0, 0);
+        if
+        :: network[0]!Timeout(2, 0, 0);
+           network[0]!Timeout(3, 0, 0);
+        :: network[0]!Timeout(3, 0, 0);
+           network[0]!Timeout(2, 0, 0);
+        fi
         network[2]!Timeout(0, 0, 0);
         network[3]!Timeout(0, 0, 0);
     :: true ->
@@ -225,19 +229,35 @@ init {
         crash[0] = true;
         crash[2] = true;
         expected_leader = 1;
-        network[1]!Timeout(0, 0, 0);
-        network[1]!Timeout(2, 0, 0);
-        network[3]!Timeout(0, 0, 0);
-        network[3]!Timeout(2, 0, 0);
+        if
+        :: network[1]!Timeout(0, 0, 0);
+           network[1]!Timeout(2, 0, 0);
+        :: network[1]!Timeout(2, 0, 0);
+           network[1]!Timeout(0, 0, 0);
+        fi
+        if
+        :: network[3]!Timeout(0, 0, 0);
+           network[3]!Timeout(2, 0, 0);
+        :: network[3]!Timeout(2, 0, 0);
+           network[3]!Timeout(0, 0, 0);
+        fi
     :: true ->
         // example 13: node 1 & node 3 crash
         crash[1] = true;
         crash[3] = true;
         expected_leader = 0;
-        network[0]!Timeout(1, 0, 0);
-        network[0]!Timeout(3, 0, 0);
-        network[2]!Timeout(1, 0, 0);
-        network[2]!Timeout(3, 0, 0);
+        if
+        :: network[0]!Timeout(1, 0, 0);
+           network[0]!Timeout(3, 0, 0);
+        :: network[0]!Timeout(3, 0, 0);
+           network[0]!Timeout(1, 0, 0);
+        fi
+        if
+        :: network[2]!Timeout(1, 0, 0);
+           network[2]!Timeout(3, 0, 0);
+        :: network[2]!Timeout(3, 0, 0);
+           network[2]!Timeout(1, 0, 0);
+        fi
     fi
 
     // start each process
