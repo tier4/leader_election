@@ -129,7 +129,8 @@ proctype node(byte id) {
             onReply(id, node_id, election_id, yes);
         :: network[id]?Leader(node_id, election_id, _) ->
             onLeader(id, node_id, election_id);
-        :: finished_election ->
+        :: crash[id] == 0 && finished_election ->
+            assert(leader[id] == expected_leader);
             goto end;
         fi
     }
@@ -156,64 +157,89 @@ init {
 
     // invoke a crash
     if
-    :: 1 == 1 ->
+    :: true ->
         // example 1: node 0 crash
         crash[0] = 1;
         expected_leader = 1;
         network[1]!Timeout(0, 0, 0);
         network[2]!Timeout(0, 0, 0);
         network[3]!Timeout(0, 0, 0);
-    :: 1 == 1 ->
+    :: true ->
         // example 2: node 1 crash
         crash[1] = 1;
         expected_leader = 0;
         network[0]!Timeout(1, 0, 0);
         network[2]!Timeout(1, 0, 0);
         network[3]!Timeout(1, 0, 0);
-    :: 1 == 1 ->
+    :: true ->
         // example 3: node 2 crash
         crash[2] = 1;
         expected_leader = 0;
         network[0]!Timeout(2, 0, 0);
         network[1]!Timeout(2, 0, 0);
         network[3]!Timeout(2, 0, 0);
-    :: 1 == 1 ->
+    :: true ->
         // example 4: node 3 crash
         crash[3] = 1;
         expected_leader = 0;
         network[0]!Timeout(3, 0, 0);
         network[1]!Timeout(3, 0, 0);
         network[2]!Timeout(3, 0, 0)
-    :: 1 == 1 ->
+    :: true ->
         // example 5: link 0-1 crash
         expected_leader = 2;
         network[0]!Timeout(1, 0, 0);
         network[1]!Timeout(0, 0, 0);
-    :: 1 == 1 ->
+    :: true ->
         // example 6: link 0-2 crash
         expected_leader = 1;
         network[0]!Timeout(2, 0, 0);
         network[2]!Timeout(0, 0, 0);
-    :: 1 == 1 ->
+    :: true ->
         // example 7: link 0-3 crash
         expected_leader = 1;
         network[0]!Timeout(3, 0, 0);
         network[3]!Timeout(0, 0, 0);
-    :: 1 == 1 ->
+    :: true ->
         // example 8: link 1-2 crash
         expected_leader = 0;
         network[1]!Timeout(2, 0, 0);
         network[2]!Timeout(1, 0, 0);
-    :: 1 == 1 ->
+    :: true ->
         // example 9: link 1-3 crash
         expected_leader = 0;
         network[1]!Timeout(3, 0, 0);
         network[3]!Timeout(1, 0, 0);
-    :: 1 == 1 ->
+    :: true ->
         // example 10: link 2-3 crash
         expected_leader = 0;
         network[2]!Timeout(3, 0, 0);
         network[3]!Timeout(2, 0, 0);
+    :: true ->
+        // example 11: link 0-2 & link 0-3 crash
+        expected_leader = 1;
+        network[0]!Timeout(2, 0, 0);
+        network[0]!Timeout(3, 0, 0);
+        network[2]!Timeout(0, 0, 0);
+        network[3]!Timeout(0, 0, 0);
+    :: true ->
+        // example 12: node 0 & node 2 crash
+        crash[0] = 1;
+        crash[2] = 1;
+        expected_leader = 1;
+        network[1]!Timeout(0, 0, 0);
+        network[1]!Timeout(2, 0, 0);
+        network[3]!Timeout(0, 0, 0);
+        network[3]!Timeout(2, 0, 0);
+    :: true ->
+        // example 13: node 1 & node 3 crash
+        crash[1] = 1;
+        crash[3] = 1;
+        expected_leader = 0;
+        network[0]!Timeout(1, 0, 0);
+        network[0]!Timeout(3, 0, 0);
+        network[2]!Timeout(1, 0, 0);
+        network[2]!Timeout(3, 0, 0);
     fi
 
     // start each process
@@ -222,10 +248,5 @@ init {
     }
 }
 
-
-#define elect_leader0 (node[0]@end && leader[0] == expected_leader)
-#define elect_leader1 (node[1]@end && leader[1] == expected_leader)
-#define elect_leader2 (node[2]@end && leader[2] == expected_leader)
-#define elect_leader3 (node[3]@end && leader[3] == expected_leader)
-#define elect_same_leader (elect_leader0 && elect_leader1 && elect_leader2 && elect_leader3)
-ltl p { []<>elect_same_leader }
+#define termination (node[0]@end && node[1]@end && node[2]@end && node[3]@end)
+ltl p { []<>termination }
