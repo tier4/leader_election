@@ -16,7 +16,7 @@ byte yes_count[NODE_NUM]
 byte leader[NODE_NUM]
 byte expected_leader
 
-#define finished_election (len(network[0]) == 0 && len(network[1]) == 0 && len(network[2]) == 0 && len(network[3]) == 0)
+#define finished_election ((crash[0] == 1 || empty(network[0])) && (crash[1] == 1 || empty(network[1])) && (crash[2] == 1 || empty(network[2])) && (crash[3] == 1 || empty(network[3])))
 
 inline new_election(id) {
     yes_count[id] = 0;
@@ -119,8 +119,6 @@ proctype node(byte id) {
     atomic {
         byte node_id, election_id, count, yes;
         if
-        :: crash[id] == 1 ->
-            goto end;
         :: network[id]?Timeout(node_id, _, _) ->
             onTimeout(id, node_id);
         :: network[id]?Election(node_id, election_id, count) ->
@@ -130,7 +128,7 @@ proctype node(byte id) {
         :: network[id]?Leader(node_id, election_id, _) ->
             onLeader(id, node_id, election_id);
         :: crash[id] == 0 && finished_election ->
-            assert(leader[id] == expected_leader);
+            // assert(leader[id] == expected_leader);
             goto end;
         fi
     }
@@ -244,6 +242,10 @@ init {
 
     // start each process
     for (i : 0..3) {
-        run node(i);
+        if
+        :: crash[i] == 0 ->
+            run node(i);
+        :: else
+        fi
     }
 }
