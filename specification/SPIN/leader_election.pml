@@ -8,7 +8,7 @@ typedef array {
 
 mtype = {Timeout, Election, Reply, Leader}
 chan network[NODE_NUM] = [BUFFER_SIZE] of {mtype, byte, byte, byte}
-byte crash[NODE_NUM]
+bool crash[NODE_NUM]
 byte connected_count[NODE_NUM]
 array connected[NODE_NUM]
 byte election_ids[NODE_NUM]
@@ -16,7 +16,7 @@ byte yes_count[NODE_NUM]
 byte leader[NODE_NUM]
 byte expected_leader
 
-#define finished_election ((crash[0] == 1 || empty(network[0])) && (crash[1] == 1 || empty(network[1])) && (crash[2] == 1 || empty(network[2])) && (crash[3] == 1 || empty(network[3])))
+#define finished_election ((crash[0] || empty(network[0])) && (crash[1] || empty(network[1])) && (crash[2] || empty(network[2])) && (crash[3] || empty(network[3])))
 
 inline new_election(id) {
     yes_count[id] = 0;
@@ -127,7 +127,7 @@ proctype node(byte id) {
             onReply(id, node_id, election_id, yes);
         :: network[id]?Leader(node_id, election_id, _) ->
             onLeader(id, node_id, election_id);
-        :: crash[id] == 0 && finished_election ->
+        :: finished_election ->
             // assert(leader[id] == expected_leader);
             goto end;
         fi
@@ -157,28 +157,28 @@ init {
     if
     :: true ->
         // example 1: node 0 crash
-        crash[0] = 1;
+        crash[0] = true;
         expected_leader = 1;
         network[1]!Timeout(0, 0, 0);
         network[2]!Timeout(0, 0, 0);
         network[3]!Timeout(0, 0, 0);
     :: true ->
         // example 2: node 1 crash
-        crash[1] = 1;
+        crash[1] = true;
         expected_leader = 0;
         network[0]!Timeout(1, 0, 0);
         network[2]!Timeout(1, 0, 0);
         network[3]!Timeout(1, 0, 0);
     :: true ->
         // example 3: node 2 crash
-        crash[2] = 1;
+        crash[2] = true;
         expected_leader = 0;
         network[0]!Timeout(2, 0, 0);
         network[1]!Timeout(2, 0, 0);
         network[3]!Timeout(2, 0, 0);
     :: true ->
         // example 4: node 3 crash
-        crash[3] = 1;
+        crash[3] = true;
         expected_leader = 0;
         network[0]!Timeout(3, 0, 0);
         network[1]!Timeout(3, 0, 0);
@@ -222,8 +222,8 @@ init {
         network[3]!Timeout(0, 0, 0);
     :: true ->
         // example 12: node 0 & node 2 crash
-        crash[0] = 1;
-        crash[2] = 1;
+        crash[0] = true;
+        crash[2] = true;
         expected_leader = 1;
         network[1]!Timeout(0, 0, 0);
         network[1]!Timeout(2, 0, 0);
@@ -231,8 +231,8 @@ init {
         network[3]!Timeout(2, 0, 0);
     :: true ->
         // example 13: node 1 & node 3 crash
-        crash[1] = 1;
-        crash[3] = 1;
+        crash[1] = true;
+        crash[3] = true;
         expected_leader = 0;
         network[0]!Timeout(1, 0, 0);
         network[0]!Timeout(3, 0, 0);
@@ -243,7 +243,7 @@ init {
     // start each process
     for (i : 0..3) {
         if
-        :: crash[i] == 0 ->
+        :: !crash[i] ->
             run node(i);
         :: else
         fi
