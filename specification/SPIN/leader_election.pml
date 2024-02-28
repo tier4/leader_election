@@ -33,9 +33,9 @@ inline new_election(id) {
 }
 
 inline onTimeout(id, node_id) {
-    connected_count[id] = connected_count[id] - 1;
+    connected_count[id]--;
     connected[id].arr[node_id] = false;
-    election_ids[id] = election_ids[id] + 1;
+    election_ids[id]++;
     new_election(id);
 }
 
@@ -77,7 +77,7 @@ inline onReply(id, node_id, election_id, yes) {
     :: election_id == election_ids[id] ->
         if
         :: yes == 1 ->
-            yes_count[id] = yes_count[id] + 1;
+            yes_count[id]++;
             if
             :: yes_count[id] == connected_count[id] -> // id can be a new leader!
                 leader[id] = id;
