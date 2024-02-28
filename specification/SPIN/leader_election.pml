@@ -82,7 +82,7 @@ inline onReply(id, node_id, election_id, yes) {
             :: yes_count[id] == connected_count[id] -> // id can be a new leader!
                 leader[id] = id;
                 byte i;
-                for (i : 0..3) {
+                for (i : 0..(NODE_NUM-1)) {
                     if
                     :: i != id && connected[id].arr[i] ->
                         network[i]!Leader(id, election_id, 0);
