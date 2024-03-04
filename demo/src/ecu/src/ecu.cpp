@@ -29,6 +29,7 @@ class ECU : public rclcpp::Node
       reply_counts = std::vector<int>(16);
       leader_votes = std::vector<int>(16);
       external_link_crash = std::vector<bool>(ecu_num, false);
+      election_id_cycle = 4;
 
       // publishers
       publisher_heartbeats_ = std::vector<rclcpp::Publisher<std_msgs::msg::Int8>::SharedPtr>(4);
@@ -100,7 +101,7 @@ class ECU : public rclcpp::Node
           if ((this->now() - received_time[i]).seconds() > timeout_threshold) {
             RCLCPP_INFO(this->get_logger(), "'%s' detected '%s' heartbeat timeout", ecu_name.c_str(), ecu_names[i].c_str());
             is_connected[i] = false;
-            election_id++;
+            election_id = (election_id + 1) & (election_id_cycle - 1); // same as (election_id + 1) % election_id_cycle
             start_leader_election();
           }
         }
@@ -148,8 +149,8 @@ class ECU : public rclcpp::Node
       reply.data |= (election_id_in_msg << 4);
       publisher_replys_[id]->publish(reply);
 
-      // if current election_id is smaller than that in msg, start election
-      if (election_id < election_id_in_msg) {
+      // if election_id in msg is newer than electio_id, start election
+      if (is_new_election(election_id_in_msg, election_id)) {
         election_id = election_id_in_msg;
         start_leader_election();
       }
@@ -232,6 +233,12 @@ class ECU : public rclcpp::Node
       }
       return connected_count;
     }
+
+    bool is_new_election(int target_id, int current_id) {
+      // see: https://github.com/tier4/system_software_team_design_doc/blob/mrm/mrm/algorithm/leader_election.en.md#election_id-comparison-logic
+      int diff = (target_id - current_id + election_id_cycle) & (election_id_cycle - 1);
+      return diff > 0 && diff <= (election_id_cycle / 2);
+    }
     
     rclcpp::TimerBase::SharedPtr timer_;
 
@@ -259,6 +266,7 @@ class ECU : public rclcpp::Node
     std::vector<int> leader_votes;
     std::vector<bool> external_link_crash;
     int election_id = 0;
+    int election_id_cycle;
 
     // parameters
     int ecu_id;
