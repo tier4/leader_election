@@ -11,7 +11,7 @@ chan network[NODE_NUM] = [BUFFER_SIZE] of {mtype, byte, byte, byte}
 bool crash[NODE_NUM]
 byte connected_count[NODE_NUM]
 array connected[NODE_NUM]
-byte election_ids[NODE_NUM]
+byte terms[NODE_NUM]
 byte yes_count[NODE_NUM]
 byte leader[NODE_NUM]
 byte expected_leader
@@ -25,7 +25,7 @@ inline new_election(id) {
     for (i : 0..(NODE_NUM-1)) {
         if
         :: connected[id].arr[i] ->
-            network[i]!Election(id, election_ids[id], connected_count[id]);
+            network[i]!Election(id, terms[id], connected_count[id]);
         :: else ->
             ; // do nothing
         fi
@@ -35,46 +35,46 @@ inline new_election(id) {
 inline onTimeout(id, node_id) {
     connected_count[id]--;
     connected[id].arr[node_id] = false;
-    election_ids[id]++;
+    terms[id]++;
     new_election(id);
 }
 
-inline onElection(id, node_id, election_id, count) {
+inline onElection(id, node_id, term, count) {
     if
-    :: election_id > election_ids[id] ->
-        election_ids[id] = election_id;
+    :: term > terms[id] ->
+        terms[id] = term;
         new_election(id);
     :: else ->
         ; // do nothing 
     fi
 
     if
-    :: election_id == election_ids[id] ->
+    :: term == terms[id] ->
         if
         :: count > connected_count[id] ->
-            network[node_id]!Reply(id, election_id, 1); // reply yes
+            network[node_id]!Reply(id, term, 1); // reply yes
         :: count == connected_count[id] ->
             if
             :: node_id < id ->
-                network[node_id]!Reply(id, election_id, 1); // reply yes
+                network[node_id]!Reply(id, term, 1); // reply yes
             :: node_id == id ->
                 assert(false);
             :: node_id > id ->
-                network[node_id]!Reply(id, election_id, 0); // reply no
+                network[node_id]!Reply(id, term, 0); // reply no
             fi
         :: count < connected_count[id] ->
-            network[node_id]!Reply(id, election_id, 0); // reply no
+            network[node_id]!Reply(id, term, 0); // reply no
         fi
-    :: election_id < election_ids[id] ->
+    :: term < terms[id] ->
         ; // do nothing
     fi
 }
 
-inline onReply(id, node_id, election_id, yes) {
+inline onReply(id, node_id, term, yes) {
     if
-    :: election_id > election_ids[id] ->
+    :: term > terms[id] ->
         assert(false);
-    :: election_id == election_ids[id] ->
+    :: term == terms[id] ->
         if
         :: yes == 1 ->
             yes_count[id]++;
@@ -85,7 +85,7 @@ inline onReply(id, node_id, election_id, yes) {
                 for (i : 0..(NODE_NUM-1)) {
                     if
                     :: i != id && connected[id].arr[i] ->
-                        network[i]!Leader(id, election_id, 0);
+                        network[i]!Leader(id, term, 0);
                     :: else ->
                         ; // do nothing
                     fi
@@ -96,18 +96,18 @@ inline onReply(id, node_id, election_id, yes) {
         :: else ->
             ; // do nothing
         fi
-    :: election_id < election_ids[id] ->
+    :: term < terms[id] ->
         ; // do nothing
     fi
 }
 
-inline onLeader(id, node_id, election_id) {
+inline onLeader(id, node_id, term) {
     if
-    :: election_id > election_ids[id] ->
+    :: term > terms[id] ->
         assert(false);
-    :: election_id == election_ids[id] ->
+    :: term == terms[id] ->
         leader[id] = node_id;
-    :: election_id < election_ids[id] ->
+    :: term < terms[id] ->
         ; // do nothing
     fi
 }
@@ -117,18 +117,18 @@ proctype node(byte id) {
 
     // represent non-deterministic behaviors
     atomic {
-        byte node_id, election_id, count, yes;
+        byte node_id, term, count, yes;
         if
         :: network[id]?Timeout(node_id, _, _) ->
             onTimeout(id, node_id);
-        :: network[id]?Election(node_id, election_id, count) ->
-            onElection(id, node_id, election_id, count);
-        :: network[id]?Reply(node_id, election_id, yes) ->
-            onReply(id, node_id, election_id, yes);
-        :: network[id]?Leader(node_id, election_id, _) ->
-            onLeader(id, node_id, election_id);
+        :: network[id]?Election(node_id, term, count) ->
+            onElection(id, node_id, term, count);
+        :: network[id]?Reply(node_id, term, yes) ->
+            onReply(id, node_id, term, yes);
+        :: network[id]?Leader(node_id, term, _) ->
+            onLeader(id, node_id, term);
         :: finished_election ->
-            // assert(leader[id] == expected_leader);
+            assert(leader[id] == expected_leader);
             goto end;
         fi
     }
