@@ -4,7 +4,7 @@ EXTENDS TLC, Integers, Sequences
 (*--algorithm leader_election
 
 variables
-    election_id = [x \in 1..4 |-> 0];
+    term = [x \in 1..4 |-> 0];
     connected_count = [x \in 1..4 |->3];
     yes_count = [x \in 1..4 |-> 0];
     leader = [x \in 1..4 |-> 0];
@@ -30,7 +30,7 @@ variables
     reply_in_massage;
     leader_message;
     node_id_in_message;
-    election_id_in_message;
+    term_in_message;
     election_message,
     connected_count_in_message,
 
@@ -97,10 +97,10 @@ macro check_reply_message(node_id) begin
     reply_message := Head(reply_messages[node_id]);
     reply_messages[node_id] := Tail(reply_messages[node_id]);
     reply_in_massage := reply_message.yes;
-    election_id_in_message := reply_message.election_id;
+    term_in_message := reply_message.term;
 
-    \* if election_id is the same and the reply is YES, increment YES count
-    if election_id_in_message = election_id[node_id] /\ reply_in_massage then
+    \* if term is the same and the reply is YES, increment YES count
+    if term_in_message = term[node_id] /\ reply_in_massage then
         yes_count[node_id] := yes_count[node_id] + 1;
 
         \* if YES count increses to connected_count, send leader message to all nodes
@@ -108,7 +108,7 @@ macro check_reply_message(node_id) begin
             leader[node_id] := node_id;
             send_leader_message_to_all(node_id,
                 [node_id |-> node_id,
-                election_id |-> election_id[node_id]])
+                term |-> term[node_id]])
         end if;
     end if;
 end macro;
@@ -118,10 +118,10 @@ macro check_leader_message(node_id) begin
     leader_message := Head(leader_messages[node_id]);
     leader_messages[node_id] := Tail(leader_messages[node_id]);
     node_id_in_message := leader_message.node_id;
-    election_id_in_message := leader_message.election_id;
+    term_in_message := leader_message.term;
 
-    \* if election_id is the same, update the leader
-    if election_id_in_message = election_id[node_id] then
+    \* if term is the same, update the leader
+    if term_in_message = term[node_id] then
         leader[node_id] := node_id_in_message;
     end if;
 end macro;
@@ -130,13 +130,13 @@ end macro;
 macro check_timeout(node_id) begin
     timeout[node_id] := FALSE;
     connected_count[node_id] := connected_count[node_id] - 1;
-    election_id[node_id] := election_id[node_id] + 1;
+    term[node_id] := term[node_id] + 1;
         
     yes_count[node_id] := 0;
     send_election_message_to_all(node_id,
         [node_id |-> node_id,
         connected_count |-> connected_count[node_id],
-        election_id |-> election_id[node_id]]);
+        term |-> term[node_id]]);
 end macro;
 
 \* function for checking election messages
@@ -144,15 +144,15 @@ macro check_election_message(node_id) begin
     election_message := Head(election_messages[node_id]);
     node_id_in_message := election_message.node_id;
     connected_count_in_message := election_message.connected_count;
-    election_id_in_message := election_message.election_id;
+    term_in_message := election_message.term;
 
-    \* if election_id in msg is bigger than mine, start new election and reply
-    if election_id_in_message > election_id[node_id] then
-        election_id[node_id] := election_id_in_message;
+    \* if term in msg is bigger than mine, start new election and reply
+    if term_in_message > term[node_id] then
+        term[node_id] := term_in_message;
         yes_count[node_id] := 0;
         message := [node_id |-> node_id,
             connected_count |-> connected_count[node_id],
-            election_id |-> election_id[node_id]];
+            term |-> term[node_id]];
         set_msg1(node_id, election_messages, message, Tail(election_messages[node_id]));
         set_msg2(node_id, election_messages, message, Tail(election_messages[node_id]));
         set_msg3(node_id, election_messages, message, Tail(election_messages[node_id]));
@@ -162,28 +162,28 @@ macro check_election_message(node_id) begin
         election_messages[node_id] := Tail(election_messages[node_id]);
     end if;
 
-    \* if election_id in msg is bigger or the same as mine, send reply message
-    if election_id_in_message = election_id[node_id] then
+    \* if term in msg is bigger or the same as mine, send reply message
+    if term_in_message = term[node_id] then
         if connected_count_in_message > connected_count[node_id] then
             \* reply Yes
             reply_messages[node_id_in_message] := Append(reply_messages[node_id_in_message],
-                [yes |-> TRUE, election_id |-> election_id[node_id]]);
+                [yes |-> TRUE, term |-> term[node_id]]);
         elsif connected_count_in_message = connected_count[node_id] then
             if node_id_in_message < node_id then
                 \* reply Yes
                 reply_messages[node_id_in_message] := Append(reply_messages[node_id_in_message],
-                    [yes |-> TRUE, election_id |-> election_id[node_id]]);
+                    [yes |-> TRUE, term |-> term[node_id]]);
             elsif node_id_in_message = node_id then
                 \* do nothing. it's my own message
             else
                 \* reply No
                 reply_messages[node_id_in_message] := Append(reply_messages[node_id_in_message],
-                    [yes |-> FALSE, election_id |-> election_id[node_id]]);
+                    [yes |-> FALSE, term |-> term[node_id]]);
             end if;
         else
             \* reply No
             reply_messages[node_id_in_message] := Append(reply_messages[node_id_in_message],
-                [yes |-> FALSE, election_id |-> election_id[node_id]]);
+                [yes |-> FALSE, term |-> term[node_id]]);
         end if;
     else
         \* do nothing
@@ -356,24 +356,24 @@ end process;
 end algorithm;*)
 \* BEGIN TRANSLATION (chksum(pcal) = "cd1aa0ab" /\ chksum(tla) = "e2a0362b")
 CONSTANT defaultInitValue
-VARIABLES election_id, connected_count, yes_count, leader, is_crashed, 
+VARIABLES term, connected_count, yes_count, leader, is_crashed, 
           connected, timeout, election_messages, reply_messages, 
           leader_messages, start, expected_leader, msg1, msg2, msg3, msg4, 
           message, reply_message, reply_in_massage, leader_message, 
-          node_id_in_message, election_id_in_message, election_message, 
+          node_id_in_message, term_in_message, election_message, 
           connected_count_in_message, pc, stack, node_id
 
-vars == << election_id, connected_count, yes_count, leader, is_crashed, 
+vars == << term, connected_count, yes_count, leader, is_crashed, 
            connected, timeout, election_messages, reply_messages, 
            leader_messages, start, expected_leader, msg1, msg2, msg3, msg4, 
            message, reply_message, reply_in_massage, leader_message, 
-           node_id_in_message, election_id_in_message, election_message, 
+           node_id_in_message, term_in_message, election_message, 
            connected_count_in_message, pc, stack, node_id >>
 
 ProcSet == (1..4)
 
 Init == (* Global variables *)
-        /\ election_id = [x \in 1..4 |-> 0]
+        /\ term = [x \in 1..4 |-> 0]
         /\ connected_count = [x \in 1..4 |->3]
         /\ yes_count = [x \in 1..4 |-> 0]
         /\ leader = [x \in 1..4 |-> 0]
@@ -394,7 +394,7 @@ Init == (* Global variables *)
         /\ reply_in_massage = defaultInitValue
         /\ leader_message = defaultInitValue
         /\ node_id_in_message = defaultInitValue
-        /\ election_id_in_message = defaultInitValue
+        /\ term_in_message = defaultInitValue
         /\ election_message = defaultInitValue
         /\ connected_count_in_message = defaultInitValue
         (* Procedure run *)
@@ -406,50 +406,50 @@ loop(self) == /\ pc[self] = "loop"
               /\ \/ /\ timeout[node_id[self]]
                     /\ timeout' = [timeout EXCEPT ![node_id[self]] = FALSE]
                     /\ connected_count' = [connected_count EXCEPT ![node_id[self]] = connected_count[node_id[self]] - 1]
-                    /\ election_id' = [election_id EXCEPT ![node_id[self]] = election_id[node_id[self]] + 1]
+                    /\ term' = [term EXCEPT ![node_id[self]] = term[node_id[self]] + 1]
                     /\ yes_count' = [yes_count EXCEPT ![node_id[self]] = 0]
                     /\ IF connected[node_id[self]][1]
                           THEN /\ msg1' = Append(election_messages[1], ([node_id |-> node_id[self],
                                                                         connected_count |-> connected_count'[node_id[self]],
-                                                                        election_id |-> election_id'[node_id[self]]]))
+                                                                        term |-> term'[node_id[self]]]))
                           ELSE /\ IF node_id[self] = 1
                                      THEN /\ msg1' = election_messages[1]
                                      ELSE /\ msg1' = election_messages[1]
                     /\ IF connected[node_id[self]][2]
                           THEN /\ msg2' = Append(election_messages[2], ([node_id |-> node_id[self],
                                                                         connected_count |-> connected_count'[node_id[self]],
-                                                                        election_id |-> election_id'[node_id[self]]]))
+                                                                        term |-> term'[node_id[self]]]))
                           ELSE /\ IF node_id[self] = 2
                                      THEN /\ msg2' = election_messages[2]
                                      ELSE /\ msg2' = election_messages[2]
                     /\ IF connected[node_id[self]][3]
                           THEN /\ msg3' = Append(election_messages[3], ([node_id |-> node_id[self],
                                                                         connected_count |-> connected_count'[node_id[self]],
-                                                                        election_id |-> election_id'[node_id[self]]]))
+                                                                        term |-> term'[node_id[self]]]))
                           ELSE /\ IF node_id[self] = 3
                                      THEN /\ msg3' = election_messages[3]
                                      ELSE /\ msg3' = election_messages[3]
                     /\ IF connected[node_id[self]][4]
                           THEN /\ msg4' = Append(election_messages[4], ([node_id |-> node_id[self],
                                                                         connected_count |-> connected_count'[node_id[self]],
-                                                                        election_id |-> election_id'[node_id[self]]]))
+                                                                        term |-> term'[node_id[self]]]))
                           ELSE /\ IF node_id[self] = 4
                                      THEN /\ msg4' = election_messages[4]
                                      ELSE /\ msg4' = election_messages[4]
                     /\ election_messages' = <<msg1', msg2', msg3', msg4'>>
                     /\ pc' = [pc EXCEPT ![self] = "jump"]
-                    /\ UNCHANGED <<leader, reply_messages, leader_messages, message, reply_message, reply_in_massage, leader_message, node_id_in_message, election_id_in_message, election_message, connected_count_in_message, stack, node_id>>
+                    /\ UNCHANGED <<leader, reply_messages, leader_messages, message, reply_message, reply_in_massage, leader_message, node_id_in_message, term_in_message, election_message, connected_count_in_message, stack, node_id>>
                  \/ /\ election_messages[node_id[self]] /= <<>>
                     /\ election_message' = Head(election_messages[node_id[self]])
                     /\ node_id_in_message' = election_message'.node_id
                     /\ connected_count_in_message' = election_message'.connected_count
-                    /\ election_id_in_message' = election_message'.election_id
-                    /\ IF election_id_in_message' > election_id[node_id[self]]
-                          THEN /\ election_id' = [election_id EXCEPT ![node_id[self]] = election_id_in_message']
+                    /\ term_in_message' = election_message'.term
+                    /\ IF term_in_message' > term[node_id[self]]
+                          THEN /\ term' = [term EXCEPT ![node_id[self]] = term_in_message']
                                /\ yes_count' = [yes_count EXCEPT ![node_id[self]] = 0]
                                /\ message' =        [node_id |-> node_id[self],
                                              connected_count |-> connected_count[node_id[self]],
-                                             election_id |-> election_id'[node_id[self]]]
+                                             term |-> term'[node_id[self]]]
                                /\ IF connected[node_id[self]][1]
                                      THEN /\ msg1' = Append(election_messages[1], message')
                                      ELSE /\ IF node_id[self] = 1
@@ -472,22 +472,22 @@ loop(self) == /\ pc[self] = "loop"
                                                 ELSE /\ msg4' = election_messages[4]
                                /\ election_messages' = <<msg1', msg2', msg3', msg4'>>
                           ELSE /\ election_messages' = [election_messages EXCEPT ![node_id[self]] = Tail(election_messages[node_id[self]])]
-                               /\ UNCHANGED << election_id, yes_count, msg1, 
+                               /\ UNCHANGED << term, yes_count, msg1, 
                                                msg2, msg3, msg4, message >>
-                    /\ IF election_id_in_message' = election_id'[node_id[self]]
+                    /\ IF term_in_message' = term'[node_id[self]]
                           THEN /\ IF connected_count_in_message' > connected_count[node_id[self]]
                                      THEN /\ reply_messages' = [reply_messages EXCEPT ![node_id_in_message'] =                                   Append(reply_messages[node_id_in_message'],
-                                                                                                               [yes |-> TRUE, election_id |-> election_id'[node_id[self]]])]
+                                                                                                               [yes |-> TRUE, term |-> term'[node_id[self]]])]
                                      ELSE /\ IF connected_count_in_message' = connected_count[node_id[self]]
                                                 THEN /\ IF node_id_in_message' < node_id[self]
                                                            THEN /\ reply_messages' = [reply_messages EXCEPT ![node_id_in_message'] =                                   Append(reply_messages[node_id_in_message'],
-                                                                                                                                     [yes |-> TRUE, election_id |-> election_id'[node_id[self]]])]
+                                                                                                                                     [yes |-> TRUE, term |-> term'[node_id[self]]])]
                                                            ELSE /\ IF node_id_in_message' = node_id[self]
                                                                       THEN /\ UNCHANGED reply_messages
                                                                       ELSE /\ reply_messages' = [reply_messages EXCEPT ![node_id_in_message'] =                                   Append(reply_messages[node_id_in_message'],
-                                                                                                                                                [yes |-> FALSE, election_id |-> election_id'[node_id[self]]])]
+                                                                                                                                                [yes |-> FALSE, term |-> term'[node_id[self]]])]
                                                 ELSE /\ reply_messages' = [reply_messages EXCEPT ![node_id_in_message'] =                                   Append(reply_messages[node_id_in_message'],
-                                                                                                                          [yes |-> FALSE, election_id |-> election_id'[node_id[self]]])]
+                                                                                                                          [yes |-> FALSE, term |-> term'[node_id[self]]])]
                           ELSE /\ TRUE
                                /\ UNCHANGED reply_messages
                     /\ pc' = [pc EXCEPT ![self] = "jump"]
@@ -496,32 +496,32 @@ loop(self) == /\ pc[self] = "loop"
                     /\ reply_message' = Head(reply_messages[node_id[self]])
                     /\ reply_messages' = [reply_messages EXCEPT ![node_id[self]] = Tail(reply_messages[node_id[self]])]
                     /\ reply_in_massage' = reply_message'.yes
-                    /\ election_id_in_message' = reply_message'.election_id
-                    /\ IF election_id_in_message' = election_id[node_id[self]] /\ reply_in_massage'
+                    /\ term_in_message' = reply_message'.term
+                    /\ IF term_in_message' = term[node_id[self]] /\ reply_in_massage'
                           THEN /\ yes_count' = [yes_count EXCEPT ![node_id[self]] = yes_count[node_id[self]] + 1]
                                /\ IF yes_count'[node_id[self]] = connected_count[node_id[self]]
                                      THEN /\ leader' = [leader EXCEPT ![node_id[self]] = node_id[self]]
                                           /\ IF connected[node_id[self]][1]
                                                 THEN /\ msg1' = Append(leader_messages[1], ([node_id |-> node_id[self],
-                                                                                            election_id |-> election_id[node_id[self]]]))
+                                                                                            term |-> term[node_id[self]]]))
                                                 ELSE /\ IF node_id[self] = 1
                                                            THEN /\ msg1' = leader_messages[1]
                                                            ELSE /\ msg1' = leader_messages[1]
                                           /\ IF connected[node_id[self]][2]
                                                 THEN /\ msg2' = Append(leader_messages[2], ([node_id |-> node_id[self],
-                                                                                            election_id |-> election_id[node_id[self]]]))
+                                                                                            term |-> term[node_id[self]]]))
                                                 ELSE /\ IF node_id[self] = 2
                                                            THEN /\ msg2' = leader_messages[2]
                                                            ELSE /\ msg2' = leader_messages[2]
                                           /\ IF connected[node_id[self]][3]
                                                 THEN /\ msg3' = Append(leader_messages[3], ([node_id |-> node_id[self],
-                                                                                            election_id |-> election_id[node_id[self]]]))
+                                                                                            term |-> term[node_id[self]]]))
                                                 ELSE /\ IF node_id[self] = 3
                                                            THEN /\ msg3' = leader_messages[3]
                                                            ELSE /\ msg3' = leader_messages[3]
                                           /\ IF connected[node_id[self]][4]
                                                 THEN /\ msg4' = Append(leader_messages[4], ([node_id |-> node_id[self],
-                                                                                            election_id |-> election_id[node_id[self]]]))
+                                                                                            term |-> term[node_id[self]]]))
                                                 ELSE /\ IF node_id[self] = 4
                                                            THEN /\ msg4' = leader_messages[4]
                                                            ELSE /\ msg4' = leader_messages[4]
@@ -536,18 +536,18 @@ loop(self) == /\ pc[self] = "loop"
                                                leader_messages, msg1, msg2, 
                                                msg3, msg4 >>
                     /\ pc' = [pc EXCEPT ![self] = "jump"]
-                    /\ UNCHANGED <<election_id, connected_count, timeout, election_messages, message, leader_message, node_id_in_message, election_message, connected_count_in_message, stack, node_id>>
+                    /\ UNCHANGED <<term, connected_count, timeout, election_messages, message, leader_message, node_id_in_message, election_message, connected_count_in_message, stack, node_id>>
                  \/ /\ leader_messages[node_id[self]] /= <<>>
                     /\ leader_message' = Head(leader_messages[node_id[self]])
                     /\ leader_messages' = [leader_messages EXCEPT ![node_id[self]] = Tail(leader_messages[node_id[self]])]
                     /\ node_id_in_message' = leader_message'.node_id
-                    /\ election_id_in_message' = leader_message'.election_id
-                    /\ IF election_id_in_message' = election_id[node_id[self]]
+                    /\ term_in_message' = leader_message'.term
+                    /\ IF term_in_message' = term[node_id[self]]
                           THEN /\ leader' = [leader EXCEPT ![node_id[self]] = node_id_in_message']
                           ELSE /\ TRUE
                                /\ UNCHANGED leader
                     /\ pc' = [pc EXCEPT ![self] = "jump"]
-                    /\ UNCHANGED <<election_id, connected_count, yes_count, timeout, election_messages, reply_messages, msg1, msg2, msg3, msg4, message, reply_message, reply_in_massage, election_message, connected_count_in_message, stack, node_id>>
+                    /\ UNCHANGED <<term, connected_count, yes_count, timeout, election_messages, reply_messages, msg1, msg2, msg3, msg4, message, reply_message, reply_in_massage, election_message, connected_count_in_message, stack, node_id>>
                  \/ /\   \A id \in 1..4: (
                        is_crashed[id]
                        \/ (timeout[id] = FALSE
@@ -559,18 +559,18 @@ loop(self) == /\ pc[self] = "loop"
                     /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                     /\ node_id' = [node_id EXCEPT ![self] = Head(stack[self]).node_id]
                     /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
-                    /\ UNCHANGED <<election_id, connected_count, yes_count, leader, timeout, election_messages, reply_messages, leader_messages, msg1, msg2, msg3, msg4, message, reply_message, reply_in_massage, leader_message, node_id_in_message, election_id_in_message, election_message, connected_count_in_message>>
+                    /\ UNCHANGED <<term, connected_count, yes_count, leader, timeout, election_messages, reply_messages, leader_messages, msg1, msg2, msg3, msg4, message, reply_message, reply_in_massage, leader_message, node_id_in_message, term_in_message, election_message, connected_count_in_message>>
               /\ UNCHANGED << is_crashed, connected, start, expected_leader >>
 
 jump(self) == /\ pc[self] = "jump"
               /\ pc' = [pc EXCEPT ![self] = "loop"]
-              /\ UNCHANGED << election_id, connected_count, yes_count, leader, 
+              /\ UNCHANGED << term, connected_count, yes_count, leader, 
                               is_crashed, connected, timeout, 
                               election_messages, reply_messages, 
                               leader_messages, start, expected_leader, msg1, 
                               msg2, msg3, msg4, message, reply_message, 
                               reply_in_massage, leader_message, 
-                              node_id_in_message, election_id_in_message, 
+                              node_id_in_message, term_in_message, 
                               election_message, connected_count_in_message, 
                               stack, node_id >>
 
@@ -602,13 +602,13 @@ start_process(self) == /\ pc[self] = "start_process"
                                   /\ pc' = [pc EXCEPT ![self] = "loop"]
                              ELSE /\ pc' = [pc EXCEPT ![self] = "Done"]
                                   /\ UNCHANGED << stack, node_id >>
-                       /\ UNCHANGED << election_id, connected_count, yes_count, 
+                       /\ UNCHANGED << term, connected_count, yes_count, 
                                        leader, election_messages, 
                                        reply_messages, leader_messages, msg1, 
                                        msg2, msg3, msg4, message, 
                                        reply_message, reply_in_massage, 
                                        leader_message, node_id_in_message, 
-                                       election_id_in_message, 
+                                       term_in_message, 
                                        election_message, 
                                        connected_count_in_message >>
 
