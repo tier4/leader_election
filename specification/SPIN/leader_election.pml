@@ -52,47 +52,42 @@ inline onElection(id, node_id, term, count) {
     :: term == terms[id] ->
         if
         :: count > connected_count[id] ->
-            network[node_id]!Reply(id, term, 1); // reply yes
+            network[node_id]!Reply(id, term); // reply yes
         :: count == connected_count[id] ->
             if
             :: node_id < id ->
-                network[node_id]!Reply(id, term, 1); // reply yes
+                network[node_id]!Reply(id, term); // reply yes
             :: node_id == id ->
                 assert(false);
             :: node_id > id ->
-                network[node_id]!Reply(id, term, 0); // reply no
+                ; // do nothing
             fi
         :: count < connected_count[id] ->
-            network[node_id]!Reply(id, term, 0); // reply no
+            ; // do nothing
         fi
     :: term < terms[id] ->
         ; // do nothing
     fi
 }
 
-inline onReply(id, node_id, term, yes) {
+inline onReply(id, node_id, term) {
     if
     :: term > terms[id] ->
         assert(false);
     :: term == terms[id] ->
+        yes_count[id]++;
         if
-        :: yes == 1 ->
-            yes_count[id]++;
-            if
-            :: yes_count[id] == connected_count[id] -> // id can be a new leader!
-                leader[id] = id;
-                byte i;
-                for (i : 0..(NODE_NUM-1)) {
-                    if
-                    :: i != id && connected[id].arr[i] ->
-                        network[i]!Leader(id, term, 0);
-                    :: else ->
-                        ; // do nothing
-                    fi
-                }
-            :: else ->
-                ; // do nothing
-            fi
+        :: yes_count[id] == connected_count[id] -> // id can be a new leader!
+            leader[id] = id;
+            byte i;
+            for (i : 0..(NODE_NUM-1)) {
+                if
+                :: i != id && connected[id].arr[i] ->
+                    network[i]!Leader(id, term, 0);
+                :: else ->
+                    ; // do nothing
+                fi
+            }
         :: else ->
             ; // do nothing
         fi
@@ -123,8 +118,8 @@ proctype node(byte id) {
             onTimeout(id, node_id);
         :: network[id]?Election(node_id, term, count) ->
             onElection(id, node_id, term, count);
-        :: network[id]?Reply(node_id, term, yes) ->
-            onReply(id, node_id, term, yes);
+        :: network[id]?Reply(node_id, term) ->
+            onReply(id, node_id, term);
         :: network[id]?Leader(node_id, term, _) ->
             onLeader(id, node_id, term);
         :: finished_election ->
