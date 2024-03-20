@@ -29,7 +29,7 @@ class ECU : public rclcpp::Node
       reply_counts = std::vector<int>(16);
       leader_votes = std::vector<int>(16);
       external_link_crash = std::vector<bool>(ecu_num, false);
-      election_id_cycle = 4;
+      term_cycle = 4;
 
       // publishers
       publisher_heartbeats_ = std::vector<rclcpp::Publisher<std_msgs::msg::Int8>::SharedPtr>(4);
@@ -97,11 +97,11 @@ class ECU : public rclcpp::Node
 
         if (is_connected[i]) {
 
-          // if timeout is detected, increment election_id and start leader election
+          // if timeout is detected, increment term and start leader election
           if ((this->now() - received_time[i]).seconds() > timeout_threshold) {
             RCLCPP_INFO(this->get_logger(), "'%s' detected '%s' heartbeat timeout", ecu_name.c_str(), ecu_names[i].c_str());
             is_connected[i] = false;
-            election_id = (election_id + 1) & (election_id_cycle - 1); // same as (election_id + 1) % election_id_cycle
+            term = (term + 1) & (term_cycle - 1); // same as (term + 1) % term_cycle
             start_leader_election();
           }
         }
@@ -128,16 +128,16 @@ class ECU : public rclcpp::Node
 
       // The low 4 bits in msg are used for connected_cound
       // The high 4 bits in msg are used for electon_id
-      // ex: msg = 0b00110001 -> connected_cound=0001, election_id=0011
+      // ex: msg = 0b00110001 -> connected_cound=0001, term=0011
       int tmp_data = msg.data;
-      int election_id_in_msg = (tmp_data >> 4);
+      int term_in_msg = (tmp_data >> 4);
 
       int connected_count = count_connected();
       int connected_count_in_msg = tmp_data & 0b1111;
 
       // The low 4 bits in msg are used for reply
       // The high 4 bits in msg are used for electon_id
-      // ex: msg = 0b00110001 -> reply=0001, election_id=0011
+      // ex: msg = 0b00110001 -> reply=0001, term=0011
       auto reply = std_msgs::msg::Int8();
       if (connected_count > connected_count_in_msg) {
         reply.data = 0;
@@ -146,12 +146,12 @@ class ECU : public rclcpp::Node
       } else {
         reply.data = 1;
       }
-      reply.data |= (election_id_in_msg << 4);
+      reply.data |= (term_in_msg << 4);
       publisher_replys_[id]->publish(reply);
 
-      // if election_id in msg is newer than electio_id, start election
-      if (is_new_election(election_id_in_msg, election_id)) {
-        election_id = election_id_in_msg;
+      // if term in msg is newer than electio_id, start election
+      if (is_new_election(term_in_msg, term)) {
+        term = term_in_msg;
         start_leader_election();
       }
     }
@@ -160,17 +160,17 @@ class ECU : public rclcpp::Node
     {
       // The low 4 bits in msg are used for reply
       // The high 4 bits in msg are used for electon_id
-      // ex: msg = 0b00110001 -> reply=0001, election_id=0011
+      // ex: msg = 0b00110001 -> reply=0001, term=0011
       int tmp_data = msg.data;
-      int election_id_in_msg = (tmp_data >> 4);
+      int term_in_msg = (tmp_data >> 4);
       bool reply = (tmp_data & 1);
 
-      reply_counts[election_id_in_msg]++;
-      if (reply == true) leader_votes[election_id_in_msg]++;
+      reply_counts[term_in_msg]++;
+      if (reply == true) leader_votes[term_in_msg]++;
 
       // if all replys has arrived, end election
-      if (reply_counts[election_id_in_msg] == count_connected()) {
-        end_leader_election(election_id_in_msg);
+      if (reply_counts[term_in_msg] == count_connected()) {
+        end_leader_election(term_in_msg);
       }
     }
 
@@ -178,10 +178,10 @@ class ECU : public rclcpp::Node
     {
       // The low 4 bits in msg are not used
       // The high 4 bits in msg are used for electon_id
-      // ex: msg = 0b00110000 -> election_id=0011
+      // ex: msg = 0b00110000 -> term=0011
       int tmp_data = msg.data;
-      int election_id_in_msg = (tmp_data >> 4);
-      if (election_id == election_id_in_msg) {
+      int term_in_msg = (tmp_data >> 4);
+      if (term == term_in_msg) {
         current_leader = id;
       }
     }
@@ -189,8 +189,8 @@ class ECU : public rclcpp::Node
     void start_leader_election() {
       RCLCPP_INFO(this->get_logger(), "'%s' started leader election", ecu_name.c_str());
 
-      reply_counts[election_id] = 0;
-      leader_votes[election_id] = 0;
+      reply_counts[term] = 0;
+      leader_votes[term] = 0;
 
       for (int i = 0; i < ecu_num; i++) {
         if (i == ecu_id) continue;
@@ -198,16 +198,16 @@ class ECU : public rclcpp::Node
 
         // The low 4 bits in election msg are used for connected_count
         // The high 4 bits in election msg are used for electon_id
-        // ex: msg = 0b00110000 -> connected_count=0001, election_id=0011
+        // ex: msg = 0b00110000 -> connected_count=0001, term=0011
         auto election = std_msgs::msg::Int8();
         election.data = count_connected();
-        election.data |= (election_id << 4);
+        election.data |= (term << 4);
         publisher_elections_[i]->publish(election);
       }
     }
 
-    void end_leader_election(int election_id_in_msg) {
-      if (leader_votes[election_id_in_msg] == count_connected()) {
+    void end_leader_election(int term_in_msg) {
+      if (leader_votes[term_in_msg] == count_connected()) {
         current_leader = ecu_id;
 
         for (int i = 0; i < ecu_num; i++) {
@@ -216,9 +216,9 @@ class ECU : public rclcpp::Node
 
           // The low 4 bits in msg are not used
           // The high 4 bits in msg are used for electon_id
-          // ex: msg = 0b00110000 -> election_id=0011
+          // ex: msg = 0b00110000 -> term=0011
           auto leader = std_msgs::msg::Int8();
-          leader.data |= (election_id_in_msg << 4);
+          leader.data |= (term_in_msg << 4);
           publisher_leaders_[i]->publish(leader);
         }
       }
@@ -235,9 +235,9 @@ class ECU : public rclcpp::Node
     }
 
     bool is_new_election(int target_id, int current_id) {
-      // see: https://github.com/tier4/system_software_team_design_doc/blob/mrm/mrm/algorithm/leader_election.en.md#election_id-comparison-logic
-      int diff = (target_id - current_id + election_id_cycle) & (election_id_cycle - 1);
-      return diff > 0 && diff <= (election_id_cycle / 2);
+      // see: https://github.com/tier4/system_software_team_design_doc/blob/mrm/mrm/algorithm/leader_election.en.md#term-comparison-logic
+      int diff = (target_id - current_id + term_cycle) & (term_cycle - 1);
+      return diff > 0 && diff <= (term_cycle / 2);
     }
     
     rclcpp::TimerBase::SharedPtr timer_;
@@ -265,8 +265,8 @@ class ECU : public rclcpp::Node
     std::vector<int> reply_counts;
     std::vector<int> leader_votes;
     std::vector<bool> external_link_crash;
-    int election_id = 0;
-    int election_id_cycle;
+    int term = 0;
+    int term_cycle;
 
     // parameters
     int ecu_id;
