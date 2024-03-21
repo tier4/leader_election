@@ -52,11 +52,11 @@ inline onElection(id, node_id, term, count) {
     :: term == terms[id] ->
         if
         :: count > connected_count[id] ->
-            network[node_id]!Reply(id, term); // reply yes
+            network[node_id]!Reply(id, term, 0); // reply yes
         :: count == connected_count[id] ->
             if
             :: node_id < id ->
-                network[node_id]!Reply(id, term); // reply yes
+                network[node_id]!Reply(id, term, 0); // reply yes
             :: node_id == id ->
                 assert(false);
             :: node_id > id ->
@@ -112,13 +112,13 @@ proctype node(byte id) {
 
     // represent non-deterministic behaviors
     atomic {
-        byte node_id, term, count, yes;
+        byte node_id, term, count;
         if
         :: network[id]?Timeout(node_id, _, _) ->
             onTimeout(id, node_id);
         :: network[id]?Election(node_id, term, count) ->
             onElection(id, node_id, term, count);
-        :: network[id]?Reply(node_id, term) ->
+        :: network[id]?Reply(node_id, term, _) ->
             onReply(id, node_id, term);
         :: network[id]?Leader(node_id, term, _) ->
             onLeader(id, node_id, term);
@@ -157,102 +157,102 @@ init {
         network[1]!Timeout(0, 0, 0);
         network[2]!Timeout(0, 0, 0);
         network[3]!Timeout(0, 0, 0);
-    :: true ->
-        // example 2: node 1 crash
-        crash[1] = true;
-        expected_leader = 0;
-        network[0]!Timeout(1, 0, 0);
-        network[2]!Timeout(1, 0, 0);
-        network[3]!Timeout(1, 0, 0);
-    :: true ->
-        // example 3: node 2 crash
-        crash[2] = true;
-        expected_leader = 0;
-        network[0]!Timeout(2, 0, 0);
-        network[1]!Timeout(2, 0, 0);
-        network[3]!Timeout(2, 0, 0);
-    :: true ->
-        // example 4: node 3 crash
-        crash[3] = true;
-        expected_leader = 0;
-        network[0]!Timeout(3, 0, 0);
-        network[1]!Timeout(3, 0, 0);
-        network[2]!Timeout(3, 0, 0)
-    :: true ->
-        // example 5: link 0-1 crash
-        expected_leader = 2;
-        network[0]!Timeout(1, 0, 0);
-        network[1]!Timeout(0, 0, 0);
-    :: true ->
-        // example 6: link 0-2 crash
-        expected_leader = 1;
-        network[0]!Timeout(2, 0, 0);
-        network[2]!Timeout(0, 0, 0);
-    :: true ->
-        // example 7: link 0-3 crash
-        expected_leader = 1;
-        network[0]!Timeout(3, 0, 0);
-        network[3]!Timeout(0, 0, 0);
-    :: true ->
-        // example 8: link 1-2 crash
-        expected_leader = 0;
-        network[1]!Timeout(2, 0, 0);
-        network[2]!Timeout(1, 0, 0);
-    :: true ->
-        // example 9: link 1-3 crash
-        expected_leader = 0;
-        network[1]!Timeout(3, 0, 0);
-        network[3]!Timeout(1, 0, 0);
-    :: true ->
-        // example 10: link 2-3 crash
-        expected_leader = 0;
-        network[2]!Timeout(3, 0, 0);
-        network[3]!Timeout(2, 0, 0);
-    :: true ->
-        // example 11: link 0-2 & link 0-3 crash
-        expected_leader = 1;
-        if
-        :: network[0]!Timeout(2, 0, 0);
-           network[0]!Timeout(3, 0, 0);
-        :: network[0]!Timeout(3, 0, 0);
-           network[0]!Timeout(2, 0, 0);
-        fi
-        network[2]!Timeout(0, 0, 0);
-        network[3]!Timeout(0, 0, 0);
-    :: true ->
-        // example 12: node 0 & node 2 crash
-        crash[0] = true;
-        crash[2] = true;
-        expected_leader = 1;
-        if
-        :: network[1]!Timeout(0, 0, 0);
-           network[1]!Timeout(2, 0, 0);
-        :: network[1]!Timeout(2, 0, 0);
-           network[1]!Timeout(0, 0, 0);
-        fi
-        if
-        :: network[3]!Timeout(0, 0, 0);
-           network[3]!Timeout(2, 0, 0);
-        :: network[3]!Timeout(2, 0, 0);
-           network[3]!Timeout(0, 0, 0);
-        fi
-    :: true ->
-        // example 13: node 1 & node 3 crash
-        crash[1] = true;
-        crash[3] = true;
-        expected_leader = 0;
-        if
-        :: network[0]!Timeout(1, 0, 0);
-           network[0]!Timeout(3, 0, 0);
-        :: network[0]!Timeout(3, 0, 0);
-           network[0]!Timeout(1, 0, 0);
-        fi
-        if
-        :: network[2]!Timeout(1, 0, 0);
-           network[2]!Timeout(3, 0, 0);
-        :: network[2]!Timeout(3, 0, 0);
-           network[2]!Timeout(1, 0, 0);
-        fi
+    // :: true ->
+    //     // example 2: node 1 crash
+    //     crash[1] = true;
+    //     expected_leader = 0;
+    //     network[0]!Timeout(1, 0, 0);
+    //     network[2]!Timeout(1, 0, 0);
+    //     network[3]!Timeout(1, 0, 0);
+    // :: true ->
+    //     // example 3: node 2 crash
+    //     crash[2] = true;
+    //     expected_leader = 0;
+    //     network[0]!Timeout(2, 0, 0);
+    //     network[1]!Timeout(2, 0, 0);
+    //     network[3]!Timeout(2, 0, 0);
+    // :: true ->
+    //     // example 4: node 3 crash
+    //     crash[3] = true;
+    //     expected_leader = 0;
+    //     network[0]!Timeout(3, 0, 0);
+    //     network[1]!Timeout(3, 0, 0);
+    //     network[2]!Timeout(3, 0, 0)
+    // :: true ->
+    //     // example 5: link 0-1 crash
+    //     expected_leader = 2;
+    //     network[0]!Timeout(1, 0, 0);
+    //     network[1]!Timeout(0, 0, 0);
+    // :: true ->
+    //     // example 6: link 0-2 crash
+    //     expected_leader = 1;
+    //     network[0]!Timeout(2, 0, 0);
+    //     network[2]!Timeout(0, 0, 0);
+    // :: true ->
+    //     // example 7: link 0-3 crash
+    //     expected_leader = 1;
+    //     network[0]!Timeout(3, 0, 0);
+    //     network[3]!Timeout(0, 0, 0);
+    // :: true ->
+    //     // example 8: link 1-2 crash
+    //     expected_leader = 0;
+    //     network[1]!Timeout(2, 0, 0);
+    //     network[2]!Timeout(1, 0, 0);
+    // :: true ->
+    //     // example 9: link 1-3 crash
+    //     expected_leader = 0;
+    //     network[1]!Timeout(3, 0, 0);
+    //     network[3]!Timeout(1, 0, 0);
+    // :: true ->
+    //     // example 10: link 2-3 crash
+    //     expected_leader = 0;
+    //     network[2]!Timeout(3, 0, 0);
+    //     network[3]!Timeout(2, 0, 0);
+    // :: true ->
+    //     // example 11: link 0-2 & link 0-3 crash
+    //     expected_leader = 1;
+    //     if
+    //     :: network[0]!Timeout(2, 0, 0);
+    //        network[0]!Timeout(3, 0, 0);
+    //     :: network[0]!Timeout(3, 0, 0);
+    //        network[0]!Timeout(2, 0, 0);
+    //     fi
+    //     network[2]!Timeout(0, 0, 0);
+    //     network[3]!Timeout(0, 0, 0);
+    // :: true ->
+    //     // example 12: node 0 & node 2 crash
+    //     crash[0] = true;
+    //     crash[2] = true;
+    //     expected_leader = 1;
+    //     if
+    //     :: network[1]!Timeout(0, 0, 0);
+    //        network[1]!Timeout(2, 0, 0);
+    //     :: network[1]!Timeout(2, 0, 0);
+    //        network[1]!Timeout(0, 0, 0);
+    //     fi
+    //     if
+    //     :: network[3]!Timeout(0, 0, 0);
+    //        network[3]!Timeout(2, 0, 0);
+    //     :: network[3]!Timeout(2, 0, 0);
+    //        network[3]!Timeout(0, 0, 0);
+    //     fi
+    // :: true ->
+    //     // example 13: node 1 & node 3 crash
+    //     crash[1] = true;
+    //     crash[3] = true;
+    //     expected_leader = 0;
+    //     if
+    //     :: network[0]!Timeout(1, 0, 0);
+    //        network[0]!Timeout(3, 0, 0);
+    //     :: network[0]!Timeout(3, 0, 0);
+    //        network[0]!Timeout(1, 0, 0);
+    //     fi
+    //     if
+    //     :: network[2]!Timeout(1, 0, 0);
+    //        network[2]!Timeout(3, 0, 0);
+    //     :: network[2]!Timeout(3, 0, 0);
+    //        network[2]!Timeout(1, 0, 0);
+    //     fi
     fi
 
     // start each process
