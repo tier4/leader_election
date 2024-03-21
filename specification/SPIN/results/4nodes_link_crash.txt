@@ -1,0 +1,33 @@
+(Spin Version 6.5.2 -- 6 December 2019)
+        + Partial Order Reduction
+
+Full statespace search for:
+        never claim             - (none specified)
+        assertion violations    +
+        acceptance   cycles     - (not selected)
+        invalid end states      +
+
+State-vector 324 byte, depth reached 473, errors: 0
+  7422201 states, stored
+ 18714013 states, matched
+ 26136214 transitions (= stored+matched)
+ 99031112 atomic steps
+hash conflicts:   2039952 (resolved)
+
+Stats on memory usage (in Megabytes):
+ 2491.584       equivalent memory usage for states (stored*(State-vector + overhead))
+ 2045.186       actual memory usage for states (compression: 82.08%)
+                state-vector as stored = 261 byte + 28 byte overhead
+  128.000       memory used for hash table (-w24)
+    0.534       memory used for DFS stack (-m10000)
+    3.292       memory lost to fragmentation
+ 2170.429       total actual memory usage
+
+
+unreached in proctype node
+        (0 of 111 states)
+unreached in init
+        (0 of 43 states)
+
+pan: elapsed time 41.8 seconds
+pan: rate 177692.15 states/second

@@ -1,22 +1,40 @@
-#define BUFFER_SIZE 10
-#define NODE_NUM 4
+#define BUFFER_SIZE 20
+#define NODE_NUM 6
 
 // This is for representing multiarray for connected_count
 typedef array {
     bool arr[NODE_NUM]
 };
 
-mtype = {Timeout, Election, Reply, Leader}
+mtype = {Election, Reply, Leader}
 chan network[NODE_NUM] = [BUFFER_SIZE] of {mtype, byte, byte, byte}
 bool crash[NODE_NUM]
 byte connected_count[NODE_NUM]
+bool detected_timeout[NODE_NUM]
+byte timeout_node[NODE_NUM]
 array connected[NODE_NUM]
 byte terms[NODE_NUM]
 byte yes_count[NODE_NUM]
 byte leader[NODE_NUM]
 byte expected_leader
 
-#define finished_election ((crash[0] || empty(network[0])) && (crash[1] || empty(network[1])) && (crash[2] || empty(network[2])) && (crash[3] || empty(network[3])))
+// termination on 4 nodes
+// #define finished_election ( \
+//     (crash[0] || (empty(network[0]) && !detected_timeout[0])) && \
+//     (crash[1] || (empty(network[1]) && !detected_timeout[1])) && \
+//     (crash[2] || (empty(network[2]) && !detected_timeout[2])) && \
+//     (crash[3] || (empty(network[3]) && !detected_timeout[3])) \
+// )
+
+// termination on 4 nodes
+#define finished_election ( \
+    (crash[0] || (empty(network[0]) && !detected_timeout[0])) && \
+    (crash[1] || (empty(network[1]) && !detected_timeout[1])) && \
+    (crash[2] || (empty(network[2]) && !detected_timeout[2])) && \
+    (crash[3] || (empty(network[3]) && !detected_timeout[3])) && \
+    (crash[4] || (empty(network[4]) && !detected_timeout[4])) && \
+    (crash[5] || (empty(network[5]) && !detected_timeout[5])) \
+)
 
 inline new_election(id) {
     yes_count[id] = 0;
@@ -33,6 +51,7 @@ inline new_election(id) {
 }
 
 inline onTimeout(id, node_id) {
+    detected_timeout[id] = false;
     connected_count[id]--;
     connected[id].arr[node_id] = false;
     terms[id]++;
@@ -114,8 +133,8 @@ proctype node(byte id) {
     atomic {
         byte node_id, term, count;
         if
-        :: network[id]?Timeout(node_id, _, _) ->
-            onTimeout(id, node_id);
+        :: detected_timeout[id] ->
+            onTimeout(id, timeout_node[id]);
         :: network[id]?Election(node_id, term, count) ->
             onElection(id, node_id, term, count);
         :: network[id]?Reply(node_id, term, _) ->
@@ -138,6 +157,7 @@ init {
     byte i, j;
     for (i : 0..(NODE_NUM-1)) {
         connected_count[i] = NODE_NUM - 1;
+        detected_timeout[i] = false;
         for (j : 0..(NODE_NUM-1)) {
             if
             :: i == j ->
@@ -148,112 +168,36 @@ init {
         }
     }
 
-    // invoke a crash
-    if
-    :: true ->
-        // example 1: node 0 crash
-        crash[0] = true;
-        expected_leader = 1;
-        network[1]!Timeout(0, 0, 0);
-        network[2]!Timeout(0, 0, 0);
-        network[3]!Timeout(0, 0, 0);
-    // :: true ->
-    //     // example 2: node 1 crash
-    //     crash[1] = true;
-    //     expected_leader = 0;
-    //     network[0]!Timeout(1, 0, 0);
-    //     network[2]!Timeout(1, 0, 0);
-    //     network[3]!Timeout(1, 0, 0);
-    // :: true ->
-    //     // example 3: node 2 crash
-    //     crash[2] = true;
-    //     expected_leader = 0;
-    //     network[0]!Timeout(2, 0, 0);
-    //     network[1]!Timeout(2, 0, 0);
-    //     network[3]!Timeout(2, 0, 0);
-    // :: true ->
-    //     // example 4: node 3 crash
-    //     crash[3] = true;
-    //     expected_leader = 0;
-    //     network[0]!Timeout(3, 0, 0);
-    //     network[1]!Timeout(3, 0, 0);
-    //     network[2]!Timeout(3, 0, 0)
-    // :: true ->
-    //     // example 5: link 0-1 crash
-    //     expected_leader = 2;
-    //     network[0]!Timeout(1, 0, 0);
-    //     network[1]!Timeout(0, 0, 0);
-    // :: true ->
-    //     // example 6: link 0-2 crash
-    //     expected_leader = 1;
-    //     network[0]!Timeout(2, 0, 0);
-    //     network[2]!Timeout(0, 0, 0);
-    // :: true ->
-    //     // example 7: link 0-3 crash
-    //     expected_leader = 1;
-    //     network[0]!Timeout(3, 0, 0);
-    //     network[3]!Timeout(0, 0, 0);
-    // :: true ->
-    //     // example 8: link 1-2 crash
-    //     expected_leader = 0;
-    //     network[1]!Timeout(2, 0, 0);
-    //     network[2]!Timeout(1, 0, 0);
-    // :: true ->
-    //     // example 9: link 1-3 crash
-    //     expected_leader = 0;
-    //     network[1]!Timeout(3, 0, 0);
-    //     network[3]!Timeout(1, 0, 0);
-    // :: true ->
-    //     // example 10: link 2-3 crash
-    //     expected_leader = 0;
-    //     network[2]!Timeout(3, 0, 0);
-    //     network[3]!Timeout(2, 0, 0);
-    // :: true ->
-    //     // example 11: link 0-2 & link 0-3 crash
-    //     expected_leader = 1;
-    //     if
-    //     :: network[0]!Timeout(2, 0, 0);
-    //        network[0]!Timeout(3, 0, 0);
-    //     :: network[0]!Timeout(3, 0, 0);
-    //        network[0]!Timeout(2, 0, 0);
-    //     fi
-    //     network[2]!Timeout(0, 0, 0);
-    //     network[3]!Timeout(0, 0, 0);
-    // :: true ->
-    //     // example 12: node 0 & node 2 crash
-    //     crash[0] = true;
-    //     crash[2] = true;
-    //     expected_leader = 1;
-    //     if
-    //     :: network[1]!Timeout(0, 0, 0);
-    //        network[1]!Timeout(2, 0, 0);
-    //     :: network[1]!Timeout(2, 0, 0);
-    //        network[1]!Timeout(0, 0, 0);
-    //     fi
-    //     if
-    //     :: network[3]!Timeout(0, 0, 0);
-    //        network[3]!Timeout(2, 0, 0);
-    //     :: network[3]!Timeout(2, 0, 0);
-    //        network[3]!Timeout(0, 0, 0);
-    //     fi
-    // :: true ->
-    //     // example 13: node 1 & node 3 crash
-    //     crash[1] = true;
-    //     crash[3] = true;
-    //     expected_leader = 0;
-    //     if
-    //     :: network[0]!Timeout(1, 0, 0);
-    //        network[0]!Timeout(3, 0, 0);
-    //     :: network[0]!Timeout(3, 0, 0);
-    //        network[0]!Timeout(1, 0, 0);
-    //     fi
-    //     if
-    //     :: network[2]!Timeout(1, 0, 0);
-    //        network[2]!Timeout(3, 0, 0);
-    //     :: network[2]!Timeout(3, 0, 0);
-    //        network[2]!Timeout(1, 0, 0);
-    //     fi
-    fi
+    // invoke a node 0 crash in 4 nodes
+    // crash[0] = true;
+    // expected_leader = 1;
+    // timeout_node[1] = 0;
+    // timeout_node[2] = 0;
+    // timeout_node[3] = 0;
+    // detected_timeout[1] = true;
+    // detected_timeout[2] = true;
+    // detected_timeout[3] = true;
+
+    // invoke a link 0-1 crash in 4 nodes
+    // expected_leader = 2;
+    // timeout_node[0] = 1;
+    // timeout_node[1] = 0;
+    // detected_timeout[0] = true;
+    // detected_timeout[1] = true;
+
+    // invoke a node 0 crash in 6 nodes
+    crash[0] = true;
+    expected_leader = 1;
+    timeout_node[1] = 0;
+    timeout_node[2] = 0;
+    timeout_node[3] = 0;
+    timeout_node[4] = 0;
+    timeout_node[5] = 0;
+    detected_timeout[1] = true;
+    detected_timeout[2] = true;
+    detected_timeout[3] = true;
+    detected_timeout[4] = true;
+    detected_timeout[5] = true;
 
     // start each process
     for (i : 0..(NODE_NUM-1)) {
