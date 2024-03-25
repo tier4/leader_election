@@ -216,7 +216,7 @@ void *start_hb_timers()
             }
         }
         pthread_mutex_unlock(&this_node.mu);
-        sleep(1); // check every 100ms, adjust this as needed
+        sleep(0.25); // check every 100ms, adjust this as needed
         pthread_mutex_lock(&this_node.mu);
     }
     pthread_mutex_unlock(&this_node.mu);
