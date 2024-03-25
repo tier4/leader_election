@@ -171,7 +171,6 @@ int recv_until(const char *address, const char *port, const struct addrinfo *hin
         // handle data (this function should quickly return)
         handle_data(data_buf);
 
-        sleep(1);
         pthread_mutex_lock(mu);
     }
     pthread_mutex_unlock(mu);
