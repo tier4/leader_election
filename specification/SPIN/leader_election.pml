@@ -44,7 +44,6 @@ inline new_election(id) {
 }
 
 inline onTimeout(id, node_id) {
-    printf("timeout\n");
     connected_count[id]--;
     connected[id].arr[node_id] = false;
     terms[id]++;
@@ -52,7 +51,6 @@ inline onTimeout(id, node_id) {
 }
 
 inline onElection(id, node_id, term, count) {
-    printf("election\n");
     if
     :: term > terms[id] ->
         terms[id] = term;
