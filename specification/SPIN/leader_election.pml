@@ -43,6 +43,12 @@ inline new_election(id) {
     }
 }
 
+/// When a node detects heartbeat timeout, do the following 2 steps as an atomic operation:
+///  1. Increment term
+///  2. Initialize yes_count(how many yes votes A get so far) to 0, and send election messages to all other nodes.
+///     Election messages have node_id, term and connected_count which represent how many node are currently connected to the node:
+///      yes_count(A)(term(A)) = 0
+///      election message = "Node x wants to be a leader! I’m conntected to y nodes! My term is z!"
 inline onTimeout(id, node_id) {
     connected_count[id]--;
     connected[id].arr[node_id] = false;
@@ -50,6 +56,21 @@ inline onTimeout(id, node_id) {
     new_election(id);
 }
 
+/// When a node A recieves an election message from node B, first compare term(A) and term(B) using the comparison logic below, and do the following:
+///  If term(A) == term(B), then check each connected_count:
+///   If connected_count(A) < connected_count(B), then send a reply message which includes node_id and term:
+///    reply message = "Node x votes for you. My term is z"
+///   If connected_count(A) == connected_count(B), then check each node_id:
+///    If node_id(A) > node_id(B), then send a reply message:
+///     reply message = "Node x votes for you. My term is z"
+///    If node_id(A) <= node_id(B): do nothing
+///   If connected_count(A) > connected_count(B): do nothing
+///  If term(A) < term(B), do the following 2 steps as an atomic operation:
+///   1. Update term to the one in the message: term(A) = term(B)
+///   2. Initialize yes_count and send election messages to all other nodes:
+///       yes_count(A)(term(A)) = 0
+///       election message = "Node x wants to be a leader! I’m conntected to y nodes! My term is z!"
+///  If term(A) > term(B): do nothing
 inline onElection(id, node_id, term, count) {
     if
     :: term > terms[id] ->
@@ -63,11 +84,11 @@ inline onElection(id, node_id, term, count) {
     :: term == terms[id] ->
         if
         :: count > connected_count[id] ->
-            network[node_id].interface[id]!Reply(term, 0); // reply yes
+            network[node_id].interface[id]!Reply(term, 0); // reply yes, 0 means nothing
         :: count == connected_count[id] ->
             if
             :: node_id < id ->
-                network[node_id].interface[id]!Reply(term, 0); // reply yes
+                network[node_id].interface[id]!Reply(term, 0); // reply yes, 0 means nothing
             :: node_id == id ->
                 assert(false);
             :: node_id > id ->
@@ -81,6 +102,12 @@ inline onElection(id, node_id, term, count) {
     fi
 }
 
+/// When a node A recieves a reply message from node B, do the following:
+///  If term(A) == term(B), do the following 2 steps as an atomic operation:
+///   1. Increment the "Yes" counts: yes_count(A)(term(A)) += 1
+///   2. When yes_count is the same as connected_count, send leader messages to all other nodes.
+///      Leader messages have node_id and term: "Node x has become a new leader! My term is z"
+///  If term(A) != term(B): do nothing
 inline onReply(id, node_id, term) {
     if
     :: term > terms[id] ->
@@ -94,7 +121,7 @@ inline onReply(id, node_id, term) {
             for (i : 0..(NODE_NUM-1)) {
                 if
                 :: i != id && connected[id].arr[i] ->
-                    network[i].interface[id]!Leader(term, 0);
+                    network[i].interface[id]!Leader(term, 0); // 0 means nothing
                 :: else ->
                     ; // do nothing
                 fi
@@ -107,6 +134,9 @@ inline onReply(id, node_id, term) {
     fi
 }
 
+/// When a node A recieves a leader message from node B, do the following:
+///  If term(A) == term(B): Update the leader: leader(A) = B
+///  If term(A) != term(B): do nothing
 inline onLeader(id, node_id, term) {
     if
     :: term > terms[id] ->
@@ -170,7 +200,6 @@ proctype node(byte id) {
         :: finished_election ->
             assert(leader[id] == expected_leader);
             goto end;
-
         fi
     }
 
@@ -197,14 +226,14 @@ init {
     // invoke a node 0 crash in 4 nodes
     // crash[0] = true;
     // expected_leader = 1;
-    // network[1].interface[0]!Timeout(0, 0);
-    // network[2].interface[0]!Timeout(0, 0);
-    // network[3].interface[0]!Timeout(0, 0);
+    // network[1].interface[0]!Timeout(0, 0); // 0 means nothing
+    // network[2].interface[0]!Timeout(0, 0); // 0 means nothing
+    // network[3].interface[0]!Timeout(0, 0); // 0 means nothing
 
     // invoke a link 0-1 crash in 4 nodes
     expected_leader = 2;
-    network[1].interface[0]!Timeout(0, 0);
-    network[0].interface[1]!Timeout(0, 0);
+    network[1].interface[0]!Timeout(0, 0); // 0 means nothing
+    network[0].interface[1]!Timeout(0, 0); // 0 means nothing
 
     // start each process
     for (i : 0..(NODE_NUM-1)) {
