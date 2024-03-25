@@ -57,7 +57,7 @@ void *handle_heartbeat(void *void_data)
     printf("Received heartbeat from node %d\n", sender_id);
 
     free(data);
-    return 0;
+    pthread_exit(NULL);
 }
 
 int handle_data(char *data)
