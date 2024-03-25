@@ -6,6 +6,28 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <time.h>
+#include <sys/time.h>
+
+struct peer_info
+{
+    int id;
+    char *address;
+    char *port;
+    struct timeval timeout_start;
+};
+
+struct coordination_node
+{
+    int id;
+    int num_nodes;
+    struct peer_info *peers;
+    pthread_mutex_t mu;
+};
+
+struct coordination_node this_node;
+// set heartbeat timeout length (ms)
+int hb_timeout_len = 1000;
 
 struct udpinfo
 {
@@ -15,6 +37,13 @@ struct udpinfo
     int *condition;
     pthread_mutex_t *mutex;
 };
+
+double get_elapsed_time_ms(struct timeval start)
+{
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    return (now.tv_sec - start.tv_sec) * 1000.0 + (now.tv_usec - start.tv_usec) / 1000.0;
+}
 
 int send_until(const char *address, const char *port, const struct addrinfo *hints, int *condition, pthread_mutex_t *mu)
 {
@@ -35,7 +64,8 @@ int send_until(const char *address, const char *port, const struct addrinfo *hin
         return -1;
     }
 
-    char *msg = "hello network programming";
+    char *msg;
+    sprintf(msg, "%d", this_node.id);
     pthread_mutex_lock(mu);
     while (!*condition)
     {
@@ -100,6 +130,14 @@ int recv_until(const char *address, const char *port, const struct addrinfo *hin
             return -1;
         }
         printf("Received data: %s\n", recv_buf);
+
+        // copy data into new buffer so receive function can continue
+        char *data_buf = (char *)malloc(recv_buf_size);
+        strncpy(data_buf, recv_buf, recv_buf_size);
+
+        // handle data (this function should quickly return)
+        handle_data(data_buf);
+
         sleep(1);
         pthread_mutex_lock(mu);
     }
@@ -122,79 +160,150 @@ void *recv_until_pthread(void *void_args)
     recv_until(args->address, args->port, args->hints, args->condition, args->mutex);
 }
 
-int main(int argc, char **argv)
+int handle_data(char *data)
 {
-    // spinoff thread to send until send_con == true
-    int send_con = 0;
+    // find which handler function to call and spinoff thread calling that function
+    pthread_t handler_thread;
+    int handler_thr_err;
 
-    struct addrinfo send_hints;
-    memset(&send_hints, 0, sizeof(send_hints));
-    send_hints.ai_family = AF_INET;
-    send_hints.ai_socktype = SOCK_DGRAM;
-    send_hints.ai_flags = AI_PASSIVE;
-
-    // send in new thread
-    pthread_t send_thread;
-    struct udpinfo send_args;
-    int snd_thr_err;
-    pthread_mutex_t send_mu;
-
-    // setup args
-    memset(&send_args, 0, sizeof(send_args));
-    send_args.address = NULL;
-    send_args.port = "3054";
-    send_args.hints = &send_hints;
-    send_args.condition = &send_con;
-    send_args.mutex = &send_mu;
-
-    if ((snd_thr_err = pthread_create(&send_thread, NULL, send_until_pthread, &send_args)) != 0)
+    // TODO: expand this to handle other functions depending on data received
+    if ((handler_thr_err = pthread_create(&handler_thread, NULL, handle_heartbeat, data)) != 0)
     {
-        printf("Error with creating send thread, exiting...\n");
-        exit(snd_thr_err);
+        fprintf(stderr, "Errow with creating handler thread\n");
+        return handler_thr_err;
     }
-    // send_until(NULL, "3054", &send_hints, &send_con);
+}
 
-    // spinoff thread to receive until recv_con == true
+void *handle_heartbeat(void *void_data)
+{
+    char *data = (char *)void_data;
+    printf("Received heartbeat from node %s\n", data);
+    return 0;
+}
+
+void *start_hb_timers()
+{
+    pthread_mutex_lock(&this_node.mu);
+    for (int i = 0; i < this_node.num_nodes; i++)
+    {
+        if (i == this_node.id)
+            continue;
+        gettimeofday(&this_node.peers[i].timeout_start, NULL);
+    }
+    while (1)
+    {
+        for (int i = 0; i < this_node.num_nodes; i++)
+        {
+            if (get_elapsed_time_ms(this_node.peers[i].timeout_start) > hb_timeout_len)
+            {
+                printf("No heartbeat received from node %d!\n", this_node.peers[i].id);
+            }
+        }
+        pthread_mutex_unlock(&this_node.mu);
+        sleep(0.01); // check every 100ms, adjust this as needed
+        pthread_mutex_lock(&this_node.mu);
+    }
+    pthread_mutex_unlock(&this_node.mu);
+    return 0;
+}
+
+int begin_coordination(int num_nodes, int my_id, int timeout_ms)
+{
+    // start heartbeat timeout timer
+    pthread_t hb_timer_thread;
+    pthread_create(&hb_timer_thread, NULL, start_hb_timers, NULL);
+
+    // for each other node, spinoff thread sending periodic heartbeats
+    int hb_con = 0;
+    pthread_mutex_t hb_mu;
+    pthread_t hb_threads[num_nodes - 1];
+    int hb_threads_count = 0;
+    struct addrinfo hints;
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+
+    pthread_mutex_lock(&this_node.mu);
+    for (int i = 0; i < num_nodes; i++)
+    {
+        if (this_node.peers[i].id == my_id) // don't send message to oneself
+            continue;
+        struct udpinfo send_args; // TODO: make sure this is allocate on heap so it isn't deallocated while thread is still running
+        send_args.address = this_node.peers[i].address;
+        send_args.port = this_node.peers[i].port;
+        send_args.hints = &hints;
+        send_args.condition = &hb_con;
+        send_args.mutex = &hb_mu;
+        pthread_create(&hb_threads[hb_threads_count++], NULL, send_until_pthread, &send_args);
+    }
+    pthread_mutex_unlock(&this_node.mu);
+
+    // start thread listening for communication from other nodes
     int recv_con = 0;
-
+    pthread_t recv_thread;
+    pthread_mutex_t recv_mu;
     struct addrinfo recv_hints;
     memset(&recv_hints, 0, sizeof(recv_hints));
     recv_hints.ai_family = AF_INET;
     recv_hints.ai_socktype = SOCK_DGRAM;
-    recv_hints.ai_flags = AI_PASSIVE;
 
-    // receive in new thread
-    pthread_t recv_thread;
+    // recv_until(nodes[my_id].address, nodes[my_id].port, &recv_hints, &recv_con, &recv_mu);
+
     struct udpinfo recv_args;
-    int recv_thr_err;
-    pthread_mutex_t recv_mu;
 
-    memset(&recv_args, 0, sizeof(recv_args));
-    recv_args.address = NULL;
-    recv_args.port = "3054";
+    pthread_mutex_lock(&this_node.mu);
+    recv_args.address = this_node.peers[my_id].address;
+    recv_args.port = this_node.peers[my_id].port;
+    pthread_mutex_unlock(&this_node.mu);
+
     recv_args.hints = &recv_hints;
     recv_args.condition = &recv_con;
     recv_args.mutex = &recv_mu;
+    pthread_create(&recv_thread, NULL, recv_until_pthread, &recv_args);
 
-    if ((recv_thr_err = pthread_create(&recv_thread, NULL, recv_until_pthread, &recv_args)) != 0)
+    sleep(60 * 5); // sleep for 5 minutes so I can test heartbeats
+}
+
+int main(int argc, char **argv)
+{
+    // argv should be [number_of_nodes, node_info_file, my_node_id]
+    if (argc != 4)
     {
-        printf("Error with creating receive thread, exiting...\n");
-        exit(recv_thr_err);
+        fprintf(stderr, "Error: expected 3 command line arguments, found: %d", argc);
+        exit(1);
     }
-    // recv_until(NULL, "3054", &recv_hints, &recv_con);
 
-    // sleep for a while and then set send_con and recv_con to true
-    sleep(10);
-    pthread_mutex_lock(&send_mu);
-    send_con = 1;
-    pthread_mutex_unlock(&send_mu);
-    pthread_mutex_lock(&recv_mu);
-    recv_con = 1;
-    pthread_mutex_unlock(&recv_mu);
-    pthread_join(send_thread, NULL);
-    pthread_join(recv_thread, NULL);
+    // get number of nodes from command line args
+    int num_nodes = argv[1];
 
-    printf("Done. Exiting main()\n");
+    // get list of peer node's info from command line args
+    /*
+    file format should be:
+    id address port
+    id address port
+    ...
+    */
+    FILE *node_info_file = fopen(argv[2], 'r');
+    struct peer_info peers[num_nodes];
+    for (int i = 0; i < num_nodes; i++)
+    {
+        if (fscanf(node_info_file, &peers[i].id, peers[i].address, peers[i].port) == EOF)
+        {
+            fprintf(stderr, "Error: unexpected end of file\n");
+            exit(1);
+        }
+    }
+    fclose(node_info_file);
+    this_node.peers = peers;
+    this_node.num_nodes = num_nodes;
+
+    // get this process's node id from command line args
+    int my_id = argv[3];
+    this_node.id = my_id;
+
+    // begin coordination algorithm
+    begin_coordination(num_nodes, my_id, hb_timeout_len);
+
+    print("Done. Exiting main()\n");
 
     exit(0);
 }
