@@ -109,7 +109,7 @@ int send_until(const char *address, const char *port, const struct addrinfo *hin
             return -1;
         }
         // printf("Sent data: %s\n", msg);
-        sleep(1);
+        sleep(0.25);
         pthread_mutex_lock(mu);
     }
     pthread_mutex_unlock(mu);
@@ -216,7 +216,7 @@ void *start_hb_timers()
             }
         }
         pthread_mutex_unlock(&this_node.mu);
-        sleep(0.25); // check every 100ms, adjust this as needed
+        sleep(1); // check every 100ms, adjust this as needed
         pthread_mutex_lock(&this_node.mu);
     }
     pthread_mutex_unlock(&this_node.mu);
