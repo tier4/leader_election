@@ -45,6 +45,28 @@ double get_elapsed_time_ms(struct timeval start)
     return (now.tv_sec - start.tv_sec) * 1000.0 + (now.tv_usec - start.tv_usec) / 1000.0;
 }
 
+void *handle_heartbeat(void *void_data)
+{
+    char *data = (char *)void_data;
+    printf("Received heartbeat from node %s\n", data);
+    return 0;
+}
+
+int handle_data(char *data)
+{
+    // find which handler function to call and spinoff thread calling that function
+    pthread_t handler_thread;
+    int handler_thr_err;
+
+    // TODO: expand this to handle other functions depending on data received
+    if ((handler_thr_err = pthread_create(&handler_thread, NULL, handle_heartbeat, data)) != 0)
+    {
+        fprintf(stderr, "Errow with creating handler thread\n");
+        return handler_thr_err;
+    }
+    return 0;
+}
+
 int send_until(const char *address, const char *port, const struct addrinfo *hints, int *condition, pthread_mutex_t *mu)
 {
     int status;
@@ -64,7 +86,7 @@ int send_until(const char *address, const char *port, const struct addrinfo *hin
         return -1;
     }
 
-    char *msg;
+    char msg[256]; // TODO: make this limit safe
     sprintf(msg, "%d", this_node.id);
     pthread_mutex_lock(mu);
     while (!*condition)
@@ -112,7 +134,7 @@ int recv_until(const char *address, const char *port, const struct addrinfo *hin
     }
 
     struct sockaddr_storage from;
-    int fromlen = sizeof(from);
+    socklen_t fromlen = sizeof(from);
     memset(&from, 0, sizeof(from));
 
     int recv_buf_size = 500;
@@ -152,33 +174,14 @@ void *send_until_pthread(void *void_args)
 {
     struct udpinfo *args = (struct udpinfo *)void_args;
     send_until(args->address, args->port, args->hints, args->condition, args->mutex);
+    pthread_exit(NULL);
 }
 
 void *recv_until_pthread(void *void_args)
 {
     struct udpinfo *args = (struct udpinfo *)void_args;
     recv_until(args->address, args->port, args->hints, args->condition, args->mutex);
-}
-
-int handle_data(char *data)
-{
-    // find which handler function to call and spinoff thread calling that function
-    pthread_t handler_thread;
-    int handler_thr_err;
-
-    // TODO: expand this to handle other functions depending on data received
-    if ((handler_thr_err = pthread_create(&handler_thread, NULL, handle_heartbeat, data)) != 0)
-    {
-        fprintf(stderr, "Errow with creating handler thread\n");
-        return handler_thr_err;
-    }
-}
-
-void *handle_heartbeat(void *void_data)
-{
-    char *data = (char *)void_data;
-    printf("Received heartbeat from node %s\n", data);
-    return 0;
+    pthread_exit(NULL);
 }
 
 void *start_hb_timers()
@@ -207,7 +210,7 @@ void *start_hb_timers()
     return 0;
 }
 
-int begin_coordination(int num_nodes, int my_id, int timeout_ms)
+int begin_coordination(int num_nodes, int my_id)
 {
     // start heartbeat timeout timer
     pthread_t hb_timer_thread;
@@ -261,6 +264,7 @@ int begin_coordination(int num_nodes, int my_id, int timeout_ms)
     pthread_create(&recv_thread, NULL, recv_until_pthread, &recv_args);
 
     sleep(60 * 5); // sleep for 5 minutes so I can test heartbeats
+    return 0;
 }
 
 int main(int argc, char **argv)
@@ -273,7 +277,7 @@ int main(int argc, char **argv)
     }
 
     // get number of nodes from command line args
-    int num_nodes = argv[1];
+    int num_nodes = strtol(argv[1], NULL, 10);
 
     // get list of peer node's info from command line args
     /*
@@ -282,11 +286,11 @@ int main(int argc, char **argv)
     id address port
     ...
     */
-    FILE *node_info_file = fopen(argv[2], 'r');
+    FILE *node_info_file = fopen(argv[2], "r");
     struct peer_info peers[num_nodes];
     for (int i = 0; i < num_nodes; i++)
     {
-        if (fscanf(node_info_file, &peers[i].id, peers[i].address, peers[i].port) == EOF)
+        if (fscanf(node_info_file, "%d %s %s", &peers[i].id, peers[i].address, peers[i].port) == EOF)
         {
             fprintf(stderr, "Error: unexpected end of file\n");
             exit(1);
@@ -297,13 +301,13 @@ int main(int argc, char **argv)
     this_node.num_nodes = num_nodes;
 
     // get this process's node id from command line args
-    int my_id = argv[3];
+    int my_id = strtol(argv[3], NULL, 10);
     this_node.id = my_id;
 
     // begin coordination algorithm
-    begin_coordination(num_nodes, my_id, hb_timeout_len);
+    begin_coordination(num_nodes, my_id);
 
-    print("Done. Exiting main()\n");
+    printf("Done. Exiting main()\n");
 
     exit(0);
 }
