@@ -55,6 +55,8 @@ void *handle_heartbeat(void *void_data)
     pthread_mutex_unlock(&this_node.mu);
 
     printf("Received heartbeat from node %d\n", sender_id);
+
+    free(data);
     return 0;
 }
 
@@ -106,7 +108,7 @@ int send_until(const char *address, const char *port, const struct addrinfo *hin
             freeaddrinfo(serverinfo);
             return -1;
         }
-        printf("Sent data: %s\n", msg);
+        // printf("Sent data: %s\n", msg);
         sleep(1);
         pthread_mutex_lock(mu);
     }
@@ -120,7 +122,7 @@ int recv_until(const char *address, const char *port, const struct addrinfo *hin
     int status;
     struct addrinfo *serverinfo;
 
-    fprintf(stderr, "calling getaddrinfo(%s, %s, hints, &serverinfo)\n", address, port);
+    // fprintf(stderr, "calling getaddrinfo(%s, %s, hints, &serverinfo)\n", address, port);
     if ((status = getaddrinfo(address, port, hints, &serverinfo)) != 0)
     {
         fprintf(stderr, "Error with getting address info (receive), status = %s\n", gai_strerror(status));
@@ -160,7 +162,7 @@ int recv_until(const char *address, const char *port, const struct addrinfo *hin
             free(recv_buf);
             return -1;
         }
-        printf("Received data: %s\n", recv_buf);
+        // printf("Received data: %s\n", recv_buf);
 
         // copy data into new buffer so receive function can continue
         char *data_buf = (char *)malloc(recv_buf_size);
@@ -183,6 +185,7 @@ void *send_until_pthread(void *void_args)
 {
     struct udpinfo *args = (struct udpinfo *)void_args;
     send_until(args->address, args->port, args->hints, args->condition, args->mutex);
+    free(args);
     pthread_exit(NULL);
 }
 
@@ -190,6 +193,7 @@ void *recv_until_pthread(void *void_args)
 {
     struct udpinfo *args = (struct udpinfo *)void_args;
     recv_until(args->address, args->port, args->hints, args->condition, args->mutex);
+    free(args);
     pthread_exit(NULL);
 }
 
@@ -282,6 +286,18 @@ int begin_coordination(int num_nodes, int my_id)
     return 0;
 }
 
+int free_peer_info()
+{
+    pthread_mutex_lock(&this_node.mu);
+    for (int i = 0; i < this_node.num_nodes; i++)
+    {
+        free(this_node.peers[i].address);
+        free(this_node.peers[i].port);
+    }
+    pthread_mutex_unlock(&this_node.mu);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     // argv should be [number_of_nodes, node_info_file, my_node_id]
@@ -289,10 +305,6 @@ int main(int argc, char **argv)
     {
         fprintf(stderr, "Error: expected 3 command line arguments (number of nodes, node info file, my node id), found: %d\n", argc - 1);
         exit(1);
-    }
-    else
-    {
-        printf("Running program with args: %s %s %s", argv[1], argv[2], argv[3]);
     }
 
     // get number of nodes from command line args
@@ -338,6 +350,7 @@ int main(int argc, char **argv)
     // begin coordination algorithm
     begin_coordination(num_nodes, my_id);
 
+    free_peer_info();
     printf("Done. Exiting main()\n");
 
     exit(0);
