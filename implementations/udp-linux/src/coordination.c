@@ -12,9 +12,9 @@
 struct peer_info
 {
     int id;
-    char *address;
-    char *port;
     struct timeval timeout_start;
+    struct addrinfo *address_info;
+    int socket;
 };
 
 struct coordination_node
@@ -23,6 +23,7 @@ struct coordination_node
     int num_nodes;
     struct peer_info *peers;
     pthread_mutex_t mu;
+    int end_coordination;
 };
 
 struct coordination_node this_node;
@@ -31,9 +32,7 @@ int hb_timeout_len = 1000;
 
 struct udpinfo
 {
-    char *address;
-    char *port;
-    struct addrinfo *hints;
+    struct peer_info *peer;
     int *condition;
     pthread_mutex_t *mutex;
 };
@@ -75,37 +74,19 @@ int handle_data(char *data)
     return 0;
 }
 
-int send_until(const char *address, const char *port, const struct addrinfo *hints, int *condition, pthread_mutex_t *mu)
+int send_until(struct peer_info *target, int *condition, pthread_mutex_t *mu)
 {
-    int status;
-    struct addrinfo *serverinfo;
-
-    if ((status = getaddrinfo(address, port, hints, &serverinfo)) != 0)
-    {
-        fprintf(stderr, "Error with getting address info (send), status = %s\n", gai_strerror(status));
-        return -1;
-    }
-
-    int sockfd;
-    if ((sockfd = socket(serverinfo->ai_family, serverinfo->ai_socktype, serverinfo->ai_protocol)) == -1)
-    {
-        fprintf(stderr, "Error with getting socket file descriptor (send)\n");
-        freeaddrinfo(serverinfo);
-        return -1;
-    }
-
     char msg[256]; // TODO: make this limit safe
-    // memset(msg, 0, 256);
     sprintf(msg, "%d", this_node.id);
     pthread_mutex_lock(mu);
     while (!*condition)
     {
         pthread_mutex_unlock(mu);
         int bytes_sent;
-        if ((bytes_sent = sendto(sockfd, msg, strlen(msg), 0, serverinfo->ai_addr, serverinfo->ai_addrlen)) == -1)
+        struct addrinfo *address_info = target->address_info;
+        if ((bytes_sent = sendto(target->socket, msg, strlen(msg), 0, address_info->ai_addr, address_info->ai_addrlen)) == -1)
         {
             fprintf(stderr, "Error with sending data\n");
-            freeaddrinfo(serverinfo);
             return -1;
         }
         // printf("Sent data: %s\n", msg);
@@ -116,34 +97,15 @@ int send_until(const char *address, const char *port, const struct addrinfo *hin
         pthread_mutex_lock(mu);
     }
     pthread_mutex_unlock(mu);
-    freeaddrinfo(serverinfo);
     return 0;
 }
 
-int recv_until(const char *address, const char *port, const struct addrinfo *hints, int *condition, pthread_mutex_t *mu)
+int recv_until(struct peer_info *listener, int *condition, pthread_mutex_t *mu)
 {
-    int status;
-    struct addrinfo *serverinfo;
-
-    // fprintf(stderr, "calling getaddrinfo(%s, %s, hints, &serverinfo)\n", address, port);
-    if ((status = getaddrinfo(address, port, hints, &serverinfo)) != 0)
-    {
-        fprintf(stderr, "Error with getting address info (receive), status = %s\n", gai_strerror(status));
-        return status;
-    }
-
-    int sockfd;
-    if ((sockfd = socket(serverinfo->ai_family, serverinfo->ai_socktype, serverinfo->ai_protocol)) == -1)
-    {
-        fprintf(stderr, "Error with getting socket file descriptor (receive)\n");
-        freeaddrinfo(serverinfo);
-        return -1;
-    }
-
-    if (bind(sockfd, serverinfo->ai_addr, serverinfo->ai_addrlen) == -1)
+    struct addrinfo *address_info = listener->address_info;
+    if (bind(listener->socket, address_info->ai_addr, address_info->ai_addrlen) == -1)
     {
         fprintf(stderr, "Error with binding receiver to port\n");
-        freeaddrinfo(serverinfo);
         return -1;
     }
 
@@ -151,17 +113,16 @@ int recv_until(const char *address, const char *port, const struct addrinfo *hin
     socklen_t fromlen = sizeof(from);
     memset(&from, 0, sizeof(from));
 
-    int recv_buf_size = 500;
+    int recv_buf_size = 256; // TODO: make this safe
     char *recv_buf = (char *)malloc(recv_buf_size);
     pthread_mutex_lock(mu);
     while (!*condition)
     {
         pthread_mutex_unlock(mu);
         int bytes_received;
-        if ((bytes_received = recvfrom(sockfd, recv_buf, recv_buf_size, 0, (struct sockaddr *)&from, &fromlen)) == -1)
+        if ((bytes_received = recvfrom(listener->socket, recv_buf, recv_buf_size, 0, (struct sockaddr *)&from, &fromlen)) == -1)
         {
             fprintf(stderr, "Error with receiving data\n");
-            freeaddrinfo(serverinfo);
             free(recv_buf);
             return -1;
         }
@@ -178,7 +139,6 @@ int recv_until(const char *address, const char *port, const struct addrinfo *hin
     }
     pthread_mutex_unlock(mu);
 
-    freeaddrinfo(serverinfo);
     free(recv_buf);
     return 0;
 }
@@ -186,7 +146,7 @@ int recv_until(const char *address, const char *port, const struct addrinfo *hin
 void *send_until_pthread(void *void_args)
 {
     struct udpinfo *args = (struct udpinfo *)void_args;
-    send_until(args->address, args->port, args->hints, args->condition, args->mutex);
+    send_until(args->peer, args->condition, args->mutex);
     free(args);
     pthread_exit(NULL);
 }
@@ -194,21 +154,61 @@ void *send_until_pthread(void *void_args)
 void *recv_until_pthread(void *void_args)
 {
     struct udpinfo *args = (struct udpinfo *)void_args;
-    recv_until(args->address, args->port, args->hints, args->condition, args->mutex);
+    recv_until(args->peer, args->condition, args->mutex);
     free(args);
     pthread_exit(NULL);
 }
 
-void *start_hb_timers()
+int broadcast_until(int *condition, pthread_mutex_t *mu)
 {
     pthread_mutex_lock(&this_node.mu);
+    pthread_t threads[this_node.num_nodes - 1];
+    int thread_count = 0;
     for (int i = 0; i < this_node.num_nodes; i++)
     {
-        if (i == this_node.id)
+        if (this_node.peers[i].id == this_node.id) // don't send message to oneself
             continue;
-        gettimeofday(&this_node.peers[i].timeout_start, NULL);
+        struct udpinfo *send_args = (struct udpinfo *)malloc(sizeof(struct udpinfo));
+        send_args->peer = &this_node.peers[i];
+        send_args->condition = &this_node.end_coordination;
+        send_args->mutex = &this_node.mu;
+        pthread_create(&threads[thread_count++], NULL, send_until_pthread, send_args);
     }
-    while (1)
+    pthread_mutex_unlock(&this_node.mu);
+    return 0;
+}
+
+int prepare_address_info(char *address, char *port, struct peer_info *peer)
+{
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_addr = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    int status;
+
+    if (status = getaddrinfo(address, port, &hints, peer->address_info))
+    {
+        fprintf(stderr, "Error with getting address info, status = %s\n", gai_strerror(status));
+        return -1;
+    }
+    return 0;
+}
+
+int prepare_socket(struct peer_info *peer)
+{
+    struct addrinfo *address_info = peer->address_info;
+    if ((peer->socket = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol)) == -1)
+    {
+        fprintf(stderr, "Error creating socket\n");
+        return -1;
+    }
+    return 0;
+}
+
+void *track_heartbeat_timers()
+{
+    pthread_mutex_lock(&this_node.mu);
+    while (!this_node.end_coordination)
     {
         for (int i = 0; i < this_node.num_nodes; i++)
         {
@@ -225,66 +225,58 @@ void *start_hb_timers()
     return 0;
 }
 
-int begin_coordination(int num_nodes, int my_id)
+int begin_heartbeat_timers()
 {
-    // start heartbeat timeout timer
-    pthread_t hb_timer_thread;
-    pthread_create(&hb_timer_thread, NULL, start_hb_timers, NULL);
-
-    // for each other node, spinoff thread sending periodic heartbeats
-    int hb_con = 0;
-    pthread_mutex_t hb_mu;
-    pthread_mutex_init(&hb_mu, NULL);
-    pthread_t hb_threads[num_nodes - 1];
-    int hb_threads_count = 0;
-    struct addrinfo hints;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_DGRAM;
-
     pthread_mutex_lock(&this_node.mu);
-    for (int i = 0; i < num_nodes; i++)
+    for (int i = 0; i < this_node.num_nodes; i++)
     {
-        if (this_node.peers[i].id == my_id) // don't send message to oneself
+        if (i == this_node.id)
             continue;
-        struct udpinfo *send_args = (struct udpinfo *)malloc(sizeof(struct udpinfo));
-        send_args->address = this_node.peers[i].address;
-        send_args->port = this_node.peers[i].port;
-        send_args->hints = &hints;
-        send_args->condition = &hb_con;
-        send_args->mutex = &hb_mu;
-        pthread_create(&hb_threads[hb_threads_count++], NULL, send_until_pthread, send_args);
+        gettimeofday(&this_node.peers[i].timeout_start, NULL);
     }
     pthread_mutex_unlock(&this_node.mu);
 
-    // start thread listening for communication from other nodes
-    int recv_con = 0;
-    pthread_t recv_thread;
-    pthread_mutex_t recv_mu;
-    pthread_mutex_init(&recv_mu, NULL);
-    struct addrinfo recv_hints;
-    memset(&recv_hints, 0, sizeof(recv_hints));
-    recv_hints.ai_family = AF_INET;
-    recv_hints.ai_socktype = SOCK_DGRAM;
-    // recv_hints.ai_flags = AI_PASSIVE;
+    pthread_t hb_timer_thread;
+    pthread_create(&hb_timer_thread, NULL, track_heartbeat_timers, NULL);
+    return 0;
+}
 
-    // recv_until(nodes[my_id].address, nodes[my_id].port, &recv_hints, &recv_con, &recv_mu);
+int begin_heartbeats()
+{
+    pthread_mutex_lock(&this_node.mu);
+    int *condition = &this_node.end_coordination;
+    pthread_mutex_t *mu = &this_node.mu;
+    pthread_mutex_unlock(&this_node.mu);
+    return broadcast_until(condition, mu);
+}
+
+int begin_listening()
+{
+    pthread_t listen_thread;
 
     struct udpinfo *recv_args = (struct udpinfo *)malloc(sizeof(struct udpinfo));
 
     pthread_mutex_lock(&this_node.mu);
-    recv_args->address = this_node.peers[my_id].address;
-    // fprintf(stderr, "this_node.peers[my_id].address = %s\n", this_node.peers[my_id].address);
-    // recv_args->address = NULL;
-    recv_args->port = this_node.peers[my_id].port;
+    recv_args->peer = &this_node.peers[this_node.id];
+    recv_args->condition = &this_node.end_coordination;
+    recv_args->mutex = &this_node.mu;
     pthread_mutex_unlock(&this_node.mu);
+    pthread_create(&listen_thread, NULL, recv_until_pthread, recv_args);
 
-    recv_args->hints = &recv_hints;
-    recv_args->condition = &recv_con;
-    recv_args->mutex = &recv_mu;
-    pthread_create(&recv_thread, NULL, recv_until_pthread, recv_args);
+    return 0;
+}
 
-    sleep(60 * 5); // sleep for 5 minutes so I can test heartbeats
+int begin_coordination(int num_nodes, int my_id)
+{
+    // being heartbeat timers and spinoff thread tracking heartbeat timers
+    begin_heartbeat_timers();
+
+    // for each other node, spinoff thread sending periodic heartbeats
+    begin_heartbeats();
+
+    // start thread listening for communication from other nodes
+    begin_listening();
+
     return 0;
 }
 
@@ -293,8 +285,7 @@ int free_peer_info()
     pthread_mutex_lock(&this_node.mu);
     for (int i = 0; i < this_node.num_nodes; i++)
     {
-        free(this_node.peers[i].address);
-        free(this_node.peers[i].port);
+        freeaddrinfo(this_node.peers[i].address_info);
     }
     pthread_mutex_unlock(&this_node.mu);
     return 0;
@@ -328,16 +319,16 @@ int main(int argc, char **argv)
     struct peer_info peers[num_nodes];
     for (int i = 0; i < num_nodes; i++)
     {
-        peers[i].address = (char *)malloc(16); // assume IPv4 addresses (15 chars max)
-        memset(peers[i].address, 0, 16);
-        peers[i].port = (char *)malloc(16);
-        memset(peers[i].port, 0, 16);
-        if (fscanf(node_info_file, "%d %15s %15s", &peers[i].id, peers[i].address, peers[i].port) == EOF)
+        char *address = (char *)malloc(16);
+        char *port = (char *)malloc(16);
+        if (fscanf(node_info_file, "%d %15s %15s", &peers[i].id, address, port) == EOF)
         {
             fprintf(stderr, "Error: unexpected end of file\n");
             fclose(node_info_file);
             exit(1);
         }
+        prepare_address_info(address, port, &peers[i]);
+        prepare_socket(&peers[i]);
     }
     fclose(node_info_file);
 
@@ -352,8 +343,16 @@ int main(int argc, char **argv)
     // begin coordination algorithm
     begin_coordination(num_nodes, my_id);
 
+    sleep(60 * 5); // sleep for 5 minutes so I can test coordination
+
+    pthread_mutex_lock(&this_node.mu);
+    this_node.end_coordination = 1;
+    pthread_mutex_unlock(&this_node.mu);
+
     free_peer_info();
     printf("Done. Exiting main()\n");
+
+    sleep(1); // give threads time to finish cleanly
 
     exit(0);
 }
