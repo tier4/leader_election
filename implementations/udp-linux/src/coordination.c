@@ -109,7 +109,10 @@ int send_until(const char *address, const char *port, const struct addrinfo *hin
             return -1;
         }
         // printf("Sent data: %s\n", msg);
-        sleep(0.25);
+        struct timespec ts;
+        ts.tv_sec = 0;
+        ts.tv_nsec = 250 * 1000 * 1000; // 250ms
+        nanosleep(&ts, NULL);
         pthread_mutex_lock(mu);
     }
     pthread_mutex_unlock(mu);
