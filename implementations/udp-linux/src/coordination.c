@@ -259,6 +259,8 @@ void *track_heartbeat_timers()
     {
         for (int i = 0; i < this_node.num_nodes; i++)
         {
+            if (this_node.peers[i].id == this_node.id)
+                continue;
             if (get_elapsed_time_ms(this_node.peers[i].timeout_start) > hb_timeout_len)
             {
                 printf("No heartbeat received from node %d!\n", this_node.peers[i].id);
