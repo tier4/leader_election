@@ -52,7 +52,7 @@ void *send_until_pthread(void *void_args);
 void *recv_until_pthread(void *void_args);
 
 /* COORDINATION FUNCTIONS */
-int begin_coordination(int num_nodes, int my_id);
+int begin_coordination();
 int begin_heartbeat_timers();
 int begin_heartbeats();
 int begin_listening();

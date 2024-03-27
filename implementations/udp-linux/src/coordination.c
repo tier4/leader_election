@@ -69,11 +69,11 @@ int prepare_address_info(char *address, char *port, struct peer_info *peer)
 {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_addr = AF_INET;
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
     int status;
 
-    if (status = getaddrinfo(address, port, &hints, peer->address_info))
+    if ((status = getaddrinfo(address, port, &hints, &peer->address_info)))
     {
         fprintf(stderr, "Error with getting address info, status = %s\n", gai_strerror(status));
         return -1;
@@ -172,8 +172,8 @@ int broadcast_until(int *condition, pthread_mutex_t *mu)
             continue;
         struct udpinfo *send_args = (struct udpinfo *)malloc(sizeof(struct udpinfo));
         send_args->peer = &this_node.peers[i];
-        send_args->condition = &this_node.end_coordination;
-        send_args->mutex = &this_node.mu;
+        send_args->condition = condition;
+        send_args->mutex = mu;
         pthread_create(&threads[thread_count++], NULL, send_until_pthread, send_args);
     }
     pthread_mutex_unlock(&this_node.mu);
@@ -197,7 +197,7 @@ void *recv_until_pthread(void *void_args)
 }
 
 /* COORDINATION FUNCTIONS */
-int begin_coordination(int num_nodes, int my_id)
+int begin_coordination()
 {
     // being heartbeat timers and spinoff thread tracking heartbeat timers
     begin_heartbeat_timers();
@@ -322,7 +322,7 @@ int main(int argc, char **argv)
     this_node.id = my_id;
 
     // begin coordination algorithm
-    begin_coordination(num_nodes, my_id);
+    begin_coordination();
 
     sleep(60 * 5); // sleep for 5 minutes so I can test coordination
 
