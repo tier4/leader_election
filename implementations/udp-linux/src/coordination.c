@@ -8,40 +8,45 @@
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
+#include "coordination.h"
 
-struct peer_info
-{
-    int id;
-    struct timeval timeout_start;
-    struct addrinfo *address_info;
-    int socket;
-};
-
-struct coordination_node
-{
-    int id;
-    int num_nodes;
-    struct peer_info *peers;
-    pthread_mutex_t mu;
-    int end_coordination;
-};
-
+/* GLOBAL DATA */
 struct coordination_node this_node;
-// set heartbeat timeout length (ms)
 int hb_timeout_len = 1000;
 
-struct udpinfo
-{
-    struct peer_info *peer;
-    int *condition;
-    pthread_mutex_t *mutex;
-};
-
+/* UTILS */
 double get_elapsed_time_ms(struct timeval start)
 {
     struct timeval now;
     gettimeofday(&now, NULL);
     return (now.tv_sec - start.tv_sec) * 1000.0 + (now.tv_usec - start.tv_usec) / 1000.0;
+}
+
+int free_peer_info()
+{
+    pthread_mutex_lock(&this_node.mu);
+    for (int i = 0; i < this_node.num_nodes; i++)
+    {
+        freeaddrinfo(this_node.peers[i].address_info);
+    }
+    pthread_mutex_unlock(&this_node.mu);
+    return 0;
+}
+
+/* DATA HANDLERS */
+int handle_data(char *data)
+{
+    // find which handler function to call and spinoff thread calling that function
+    pthread_t handler_thread;
+    int handler_thr_err;
+
+    // TODO: expand this to handle other functions depending on data received
+    if ((handler_thr_err = pthread_create(&handler_thread, NULL, handle_heartbeat, data)) != 0)
+    {
+        fprintf(stderr, "Errow with creating handler thread\n");
+        return handler_thr_err;
+    }
+    return 0;
 }
 
 void *handle_heartbeat(void *void_data)
@@ -59,17 +64,30 @@ void *handle_heartbeat(void *void_data)
     pthread_exit(NULL);
 }
 
-int handle_data(char *data)
+/* NETWORK FUNCTIONS */
+int prepare_address_info(char *address, char *port, struct peer_info *peer)
 {
-    // find which handler function to call and spinoff thread calling that function
-    pthread_t handler_thread;
-    int handler_thr_err;
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_addr = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    int status;
 
-    // TODO: expand this to handle other functions depending on data received
-    if ((handler_thr_err = pthread_create(&handler_thread, NULL, handle_heartbeat, data)) != 0)
+    if (status = getaddrinfo(address, port, &hints, peer->address_info))
     {
-        fprintf(stderr, "Errow with creating handler thread\n");
-        return handler_thr_err;
+        fprintf(stderr, "Error with getting address info, status = %s\n", gai_strerror(status));
+        return -1;
+    }
+    return 0;
+}
+
+int prepare_socket(struct peer_info *peer)
+{
+    struct addrinfo *address_info = peer->address_info;
+    if ((peer->socket = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol)) == -1)
+    {
+        fprintf(stderr, "Error creating socket\n");
+        return -1;
     }
     return 0;
 }
@@ -143,22 +161,6 @@ int recv_until(struct peer_info *listener, int *condition, pthread_mutex_t *mu)
     return 0;
 }
 
-void *send_until_pthread(void *void_args)
-{
-    struct udpinfo *args = (struct udpinfo *)void_args;
-    send_until(args->peer, args->condition, args->mutex);
-    free(args);
-    pthread_exit(NULL);
-}
-
-void *recv_until_pthread(void *void_args)
-{
-    struct udpinfo *args = (struct udpinfo *)void_args;
-    recv_until(args->peer, args->condition, args->mutex);
-    free(args);
-    pthread_exit(NULL);
-}
-
 int broadcast_until(int *condition, pthread_mutex_t *mu)
 {
     pthread_mutex_lock(&this_node.mu);
@@ -178,50 +180,34 @@ int broadcast_until(int *condition, pthread_mutex_t *mu)
     return 0;
 }
 
-int prepare_address_info(char *address, char *port, struct peer_info *peer)
+void *send_until_pthread(void *void_args)
 {
-    struct addrinfo hints;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_addr = AF_INET;
-    hints.ai_socktype = SOCK_DGRAM;
-    int status;
-
-    if (status = getaddrinfo(address, port, &hints, peer->address_info))
-    {
-        fprintf(stderr, "Error with getting address info, status = %s\n", gai_strerror(status));
-        return -1;
-    }
-    return 0;
+    struct udpinfo *args = (struct udpinfo *)void_args;
+    send_until(args->peer, args->condition, args->mutex);
+    free(args);
+    pthread_exit(NULL);
 }
 
-int prepare_socket(struct peer_info *peer)
+void *recv_until_pthread(void *void_args)
 {
-    struct addrinfo *address_info = peer->address_info;
-    if ((peer->socket = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol)) == -1)
-    {
-        fprintf(stderr, "Error creating socket\n");
-        return -1;
-    }
-    return 0;
+    struct udpinfo *args = (struct udpinfo *)void_args;
+    recv_until(args->peer, args->condition, args->mutex);
+    free(args);
+    pthread_exit(NULL);
 }
 
-void *track_heartbeat_timers()
+/* COORDINATION FUNCTIONS */
+int begin_coordination(int num_nodes, int my_id)
 {
-    pthread_mutex_lock(&this_node.mu);
-    while (!this_node.end_coordination)
-    {
-        for (int i = 0; i < this_node.num_nodes; i++)
-        {
-            if (get_elapsed_time_ms(this_node.peers[i].timeout_start) > hb_timeout_len)
-            {
-                printf("No heartbeat received from node %d!\n", this_node.peers[i].id);
-            }
-        }
-        pthread_mutex_unlock(&this_node.mu);
-        sleep(1); // check every 100ms, adjust this as needed
-        pthread_mutex_lock(&this_node.mu);
-    }
-    pthread_mutex_unlock(&this_node.mu);
+    // being heartbeat timers and spinoff thread tracking heartbeat timers
+    begin_heartbeat_timers();
+
+    // for each other node, spinoff thread sending periodic heartbeats
+    begin_heartbeats();
+
+    // start thread listening for communication from other nodes
+    begin_listening();
+
     return 0;
 }
 
@@ -266,26 +252,21 @@ int begin_listening()
     return 0;
 }
 
-int begin_coordination(int num_nodes, int my_id)
-{
-    // being heartbeat timers and spinoff thread tracking heartbeat timers
-    begin_heartbeat_timers();
-
-    // for each other node, spinoff thread sending periodic heartbeats
-    begin_heartbeats();
-
-    // start thread listening for communication from other nodes
-    begin_listening();
-
-    return 0;
-}
-
-int free_peer_info()
+void *track_heartbeat_timers()
 {
     pthread_mutex_lock(&this_node.mu);
-    for (int i = 0; i < this_node.num_nodes; i++)
+    while (!this_node.end_coordination)
     {
-        freeaddrinfo(this_node.peers[i].address_info);
+        for (int i = 0; i < this_node.num_nodes; i++)
+        {
+            if (get_elapsed_time_ms(this_node.peers[i].timeout_start) > hb_timeout_len)
+            {
+                printf("No heartbeat received from node %d!\n", this_node.peers[i].id);
+            }
+        }
+        pthread_mutex_unlock(&this_node.mu);
+        sleep(1); // check every 100ms, adjust this as needed
+        pthread_mutex_lock(&this_node.mu);
     }
     pthread_mutex_unlock(&this_node.mu);
     return 0;
