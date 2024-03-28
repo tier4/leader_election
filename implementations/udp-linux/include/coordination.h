@@ -16,6 +16,7 @@ struct peer_info
     struct timeval timeout_start;
     struct addrinfo *address_info;
     int socket;
+    int connected;
 };
 
 struct coordination_node
@@ -27,8 +28,9 @@ struct coordination_node
     int end_coordination;
     int connected_count;
     int term;
-    int is_leader;
+    int leader_id;
     int votes_received;
+    int *voted_peers;
 };
 
 struct send_args
@@ -44,6 +46,13 @@ struct recv_args
     struct peer_info *peer;
     int *condition;
     pthread_mutex_t *mutex;
+};
+
+struct leader_chosen_info
+{
+    int chosen;
+    pthread_cond_t cond;
+    pthread_mutex_t mu;
 };
 
 enum msg_type
@@ -62,11 +71,13 @@ double get_elapsed_time_ms(struct timeval start);
 int free_peer_info();
 int join_and_free(pthread_t *threads, int count);
 long encode_msg(unsigned short type, unsigned short node_id, unsigned short term, unsigned short path_or_link_info);
+short get_link_info();
 short get_msg_type(long msg);
 short get_msg_node_id(long msg);
 short get_msg_term(long msg);
 short get_msg_path_info(long msg);
 short get_msg_link_info(long msg);
+int get_msg_connected_count(long msg);
 
 /* DATA HANDLERS */
 int handle_data(long msg);
