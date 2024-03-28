@@ -230,6 +230,12 @@ int send_until(long *msg, struct peer_info *target, int *condition, pthread_mute
 
 int recv_until(struct peer_info *listener, int *condition, pthread_mutex_t *mu)
 {
+    // have recvfrom() timeout after 1 second so it checks if condition=true
+    struct timeval recv_to;
+    recv_to.tv_sec = 1;
+    recv_to.tv_usec = 0;
+    setsockopt(listener->socket, SOL_SOCKET, SO_RCVTIMEO, &recv_to, sizeof(recv_to));
+
     struct addrinfo *address_info = listener->address_info;
     if (bind(listener->socket, address_info->ai_addr, address_info->ai_addrlen) == -1)
     {
@@ -248,17 +254,10 @@ int recv_until(struct peer_info *listener, int *condition, pthread_mutex_t *mu)
     {
         pthread_mutex_unlock(mu);
         int bytes_received;
-        if ((bytes_received = recvfrom(listener->socket, recv_buf, recv_buf_size, 0, (struct sockaddr *)&from, &fromlen)) == -1)
+        if ((bytes_received = recvfrom(listener->socket, recv_buf, recv_buf_size, 0, (struct sockaddr *)&from, &fromlen)) > 0)
         {
-            fprintf(stderr, "Error with receiving data\n");
-            free(recv_buf);
-            return -1;
+            handle_data(*recv_buf);
         }
-        // printf("Received data: %s\n", recv_buf);
-
-        // handle data (this function should quickly return)
-        handle_data(*recv_buf);
-
         pthread_mutex_lock(mu);
     }
     pthread_mutex_unlock(mu);
