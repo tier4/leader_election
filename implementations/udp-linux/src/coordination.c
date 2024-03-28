@@ -17,12 +17,12 @@ int hb_timeout_len = 1000;
 pthread_cond_t leader_chosen = PTHREAD_COND_INITIALIZER;
 
 /* SIGNAL HANDLER */
-int sigint_handler()
+void sigint_handler()
 {
+    printf("Handling SIGINT by ending coordination...\n");
     pthread_mutex_lock(&this_node.mu);
     this_node.end_coordination = 1;
     pthread_mutex_unlock(&this_node.mu);
-    return 0;
 }
 
 /* UTILS */
@@ -49,7 +49,7 @@ int join_and_free(pthread_t *threads, int count)
     pthread_t *curr_thread = threads;
     for (int i = 0; i < count; i++)
     {
-        pthread_join(curr_thread, NULL);
+        pthread_join(*curr_thread, NULL);
         curr_thread += 1;
     }
     free(threads);
@@ -58,7 +58,7 @@ int join_and_free(pthread_t *threads, int count)
 
 long encode_msg(unsigned short type, unsigned short node_id, unsigned short term, unsigned short path_or_link_info)
 {
-    return (type << 24) || (node_id << 16) || (term << 8) || path_or_link_info;
+    return (type << 24) | (node_id << 16) | (term << 8) | path_or_link_info;
 }
 
 short get_msg_type(long msg)
@@ -101,12 +101,16 @@ int handle_data(long msg)
     {
     case heartbeat_msg:
         handler = handle_heartbeat;
+        break;
     case election_msg:
         handler = handle_election_msg;
+        break;
     case election_reply_msg:
         handler = handle_election_reply;
+        break;
     case leader_msg:
         handler = handle_leader_msg;
+        break;
     }
 
     if ((handler_thr_err = pthread_create(&handler_thread, NULL, handler, (void *)msg)) != 0)
@@ -137,12 +141,16 @@ void *handle_election_msg(void *void_data) // TODO:
 {
     long msg = (long)void_data;
 
+    printf("msg = %li", msg);
+
     pthread_exit(NULL);
 }
 
 void *handle_election_reply(void *void_data) // TODO:
 {
     long msg = (long)void_data;
+
+    printf("msg = %li", msg);
 
     // TODO: make sure not to count multiple votes from same peer
 
@@ -160,6 +168,8 @@ void *handle_election_reply(void *void_data) // TODO:
 void *handle_leader_msg(void *void_data) // TODO:
 {
     long msg = (long)void_data;
+
+    printf("msg = %li", msg);
 
     // pthread_cond_broadcast(&leader_chosen);
 
@@ -246,12 +256,8 @@ int recv_until(struct peer_info *listener, int *condition, pthread_mutex_t *mu)
         }
         // printf("Received data: %s\n", recv_buf);
 
-        // copy data into new buffer so receive function can continue
-        char *data_buf = (char *)malloc(recv_buf_size);
-        strncpy(data_buf, recv_buf, recv_buf_size);
-
         // handle data (this function should quickly return)
-        handle_data(data_buf);
+        handle_data(*recv_buf);
 
         pthread_mutex_lock(mu);
     }
@@ -334,7 +340,7 @@ pthread_t *begin_heartbeat_timers()
     pthread_mutex_unlock(&this_node.mu);
 
     pthread_t *hb_timer_thread = (pthread_t *)malloc(sizeof(pthread_t));
-    pthread_create(&hb_timer_thread, NULL, track_heartbeat_timers, NULL);
+    pthread_create(hb_timer_thread, NULL, track_heartbeat_timers, NULL);
     return hb_timer_thread;
 }
 
@@ -344,7 +350,7 @@ pthread_t *begin_heartbeats()
     int *condition = &this_node.end_coordination;
     pthread_mutex_t *mu = &this_node.mu;
     long *msg = (long *)malloc(sizeof(long));
-    *msg = encode_msg(heartbeat_msg, this_node.id, NULL, NULL);
+    *msg = encode_msg(heartbeat_msg, this_node.id, 0, 0);
     pthread_mutex_unlock(&this_node.mu);
 
     return broadcast_until(msg, condition, mu);
@@ -361,7 +367,7 @@ pthread_t *begin_listening()
     args->condition = &this_node.end_coordination;
     args->mutex = &this_node.mu;
     pthread_mutex_unlock(&this_node.mu);
-    pthread_create(&listen_thread, NULL, recv_until_pthread, args);
+    pthread_create(listen_thread, NULL, recv_until_pthread, args);
 
     return listen_thread;
 }
@@ -408,7 +414,7 @@ int bully_election()
     // int num_nodes = this_node.num_nodes;
     // this_node.term = this_node.term + 1; // TODO: add mod M for wrap around
     // long *msg = (long *)malloc(sizeof(long));
-    // *msg = encode_msg(election_msg, this_node.id, this_node.term, NULL); // TODO: link information?
+    // *msg = encode_msg(election_msg, this_node.id, this_node.term, 0); // TODO: link information?
     // pthread_mutex_unlock(&this_node.mu);
 
     // int yes_count = 0;
@@ -432,6 +438,13 @@ int main(int argc, char **argv)
     struct sigaction sigact;
     memset(&sigact, 0, sizeof(sigact));
     sigact.sa_handler = sigint_handler;
+    int sigact_status;
+    if ((sigact_status = sigaction(SIGINT, &sigact, NULL)) != 0)
+    {
+        fprintf(stderr, "Error creating sigaction. Exiting...\n");
+        exit(-1);
+    }
+    // TODO: check if sigaction() returned error
 
     // argv should be [number_of_nodes, node_info_file, my_node_id]
     if (argc != 4)

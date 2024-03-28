@@ -55,7 +55,7 @@ enum msg_type
 };
 
 /* SIGNAL HANDLER */
-int sigint_handler();
+void sigint_handler();
 
 /* UTILS*/
 double get_elapsed_time_ms(struct timeval start);
