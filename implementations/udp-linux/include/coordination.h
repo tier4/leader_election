@@ -100,6 +100,7 @@ int coordination();
 pthread_t *begin_heartbeat_timers();
 pthread_t *begin_heartbeats();
 pthread_t *begin_listening();
-int begin_leader_election();
+void *begin_leader_election();
 void *track_heartbeat_timers();
 int bully_election();
+void *check_election_result();
