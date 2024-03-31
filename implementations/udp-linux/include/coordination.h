@@ -35,15 +35,15 @@ struct coordination_node
 
 struct send_args
 {
-    long *msg;
-    struct peer_info *peer;
+    long msg;
+    struct peer_info peer;
     int *condition;
     pthread_mutex_t *mutex;
 };
 
 struct recv_args
 {
-    struct peer_info *peer;
+    struct peer_info peer;
     int *condition;
     pthread_mutex_t *mutex;
 };
@@ -89,11 +89,9 @@ void *handle_leader_msg(void *void_data);
 /* NETWORK FUNCTIONS */
 int prepare_address_info(char *address, char *port, struct peer_info *peer);
 int prepare_socket(struct peer_info *peer);
-int send_until(long *msg, struct peer_info *target, int *condition, pthread_mutex_t *mu);
-int recv_until(struct peer_info *listener, int *condition, pthread_mutex_t *mu);
-pthread_t *broadcast_until(long *msg, int *condition, pthread_mutex_t *mu);
-void *send_until_pthread(void *void_args);
-void *recv_until_pthread(void *void_args);
+void *send_until(void *void_args);
+void *recv_until(void *void_args);
+pthread_t *broadcast_until(long msg, int *condition, pthread_mutex_t *mu);
 
 /* COORDINATION FUNCTIONS */
 int coordination();

@@ -11,6 +11,44 @@
 #include "coordination.h"
 #include <signal.h>
 
+/*
+NOTES ABOUT REDUCING PROGRAM COMPLEXITY:
+
+1. Instead of creating pthreads in functions, and returning the references,
+why don't we create a pool of pthreads and pass them from the outside into functions?
+
+This is probably the biggest issue...I want to create threads on a convenience basis, not
+like a pool, but is that possible without making things confusing with different functions
+waiting for threads to join, etc.
+
+2. Let's make our conditions less confusing
+
+I think end_coordination is okay, but leader_chosen is poorly named/used far too
+widely now
+
+We probably want MORE condition variables: election_start, election_over, election_check
+
+Let's use these condition variables to communicate between threads instead of doing
+complicated things like having data handler routines call random functions. Just change
+condition variable instead.
+
+create this kind of struct and accompanying functions for clean abstraction:
+struct cond_var_struct
+{
+    int            status
+    pthread_cont_t con
+    pthread_mu_t   mu
+}
+
+3. Let's clear up who does malloc()-ing and who does free()-ing
+
+4. make more functions to modularize code like "check_dupe_vote()" or "send_election_reply()"
+or "heartbeat_timeout()"
+
+5. get rid of send_until_pthread() and recv_until_pthread() and just make send_until() and
+recv_until() pthread routines
+*/
+
 /* GLOBAL DATA */
 struct coordination_node this_node;
 int hb_timeout_len = 1000;
@@ -182,11 +220,8 @@ void *handle_election_msg(void *void_data)
 
     printf("Handling election msg received from node %d\n term = %d, connected_count = %d\n", node_id, term, connected_count);
 
-    // if send reply, the following vars are used
-    int reply_sent;
+    int reply_sent = 0;
     pthread_t reply_thread;
-    struct send_args *reply_args;
-    long *reply_msg;
     int election_over;
     pthread_mutex_t election_mu;
 
@@ -201,17 +236,16 @@ void *handle_election_msg(void *void_data)
 
             // TODO: will the below strategy overload the network if tons of msgs from old terms are being sent? I think its okay
             // send vote msg until leader election is over (may be dropped)
-            reply_args = (struct send_args *)malloc(sizeof(struct send_args));
-            reply_msg = (long *)malloc(sizeof(long));
-            *reply_msg = encode_msg(election_reply_msg, this_node.id, this_node.term, get_link_info());
+            struct send_args *reply_args = (struct send_args *)malloc(sizeof(struct send_args));
+            long reply_msg = encode_msg(election_reply_msg, this_node.id, this_node.term, get_link_info());
             election_over = 0;
             pthread_mutex_init(&election_mu, NULL);
 
             reply_args->msg = reply_msg;
-            reply_args->peer = &this_node.peers[node_id];
+            reply_args->peer = this_node.peers[node_id];
             reply_args->condition = &election_over;
             reply_args->mutex = &election_mu;
-            pthread_create(&reply_thread, NULL, send_until_pthread, reply_args);
+            pthread_create(&reply_thread, NULL, send_until, reply_args);
             reply_sent = 1;
         }
         // else don't give vote (ignore msg)
@@ -343,44 +377,53 @@ int prepare_socket(struct peer_info *peer)
     return 0;
 }
 
-int send_until(long *msg, struct peer_info *target, int *condition, pthread_mutex_t *mu)
+void *send_until(void *void_args)
 {
-    pthread_mutex_lock(mu);
-    while (!*condition)
+    // get args: (long msg, struct peer_info target, int *condition, pthread_mutex_t *mu)
+    struct send_args *args = void_args;
+
+    pthread_mutex_lock(args->mutex);
+    while (!*args->condition)
     {
-        pthread_mutex_unlock(mu);
+        pthread_mutex_unlock(args->mutex);
         int bytes_sent;
-        struct addrinfo *address_info = target->address_info;
+        struct addrinfo *address_info = args->peer.address_info;
         // printf("Sending msg of type %d to node %d\n", get_msg_type(*msg), target->id);
-        if ((bytes_sent = sendto(target->socket, msg, sizeof(long), 0, address_info->ai_addr, address_info->ai_addrlen)) == -1)
+        if ((bytes_sent = sendto(args->peer.socket, &args->msg, sizeof(long), 0, address_info->ai_addr, address_info->ai_addrlen)) == -1)
         {
             fprintf(stderr, "Error with sending data\n");
-            return -1;
+            free(args);
+            pthread_exit(NULL);
         }
         // printf("Sent data: %s\n", msg);
         struct timespec ts;
         ts.tv_sec = 0;
         ts.tv_nsec = 250 * 1000 * 1000; // 250ms
         nanosleep(&ts, NULL);
-        pthread_mutex_lock(mu);
+        pthread_mutex_lock(args->mutex);
     }
-    pthread_mutex_unlock(mu);
-    return 0;
+    pthread_mutex_unlock(args->mutex);
+    free(args);
+    pthread_exit(NULL);
 }
 
-int recv_until(struct peer_info *listener, int *condition, pthread_mutex_t *mu)
+void *recv_until(void *void_args)
 {
+    // get args: (struct peer_info listener, int *condition, pthread_mutex_t *mu)
+    struct recv_args *args = void_args;
+
     // have recvfrom() timeout after 1 second so it checks if condition=true
     struct timeval recv_to;
     recv_to.tv_sec = 1;
     recv_to.tv_usec = 0;
-    setsockopt(listener->socket, SOL_SOCKET, SO_RCVTIMEO, &recv_to, sizeof(recv_to));
+    setsockopt(args->peer.socket, SOL_SOCKET, SO_RCVTIMEO, &recv_to, sizeof(recv_to));
 
-    struct addrinfo *address_info = listener->address_info;
-    if (bind(listener->socket, address_info->ai_addr, address_info->ai_addrlen) == -1)
+    struct addrinfo *address_info = args->peer.address_info;
+    if (bind(args->peer.socket, address_info->ai_addr, address_info->ai_addrlen) == -1)
     {
         fprintf(stderr, "Error with binding receiver to port\n");
-        return -1;
+        pthread_exit(NULL);
+        ;
     }
 
     struct sockaddr_storage from;
@@ -388,27 +431,27 @@ int recv_until(struct peer_info *listener, int *condition, pthread_mutex_t *mu)
     memset(&from, 0, sizeof(from));
 
     int recv_buf_size = 64;
-    long *recv_buf = (long *)malloc(sizeof(long));
-    pthread_mutex_lock(mu);
-    while (!*condition)
+    long recv_buf;
+    pthread_mutex_lock(args->mutex);
+    while (!*args->condition)
     {
-        pthread_mutex_unlock(mu);
+        pthread_mutex_unlock(args->mutex);
         int bytes_received;
-        if ((bytes_received = recvfrom(listener->socket, recv_buf, recv_buf_size, 0, (struct sockaddr *)&from, &fromlen)) > 0)
+        if ((bytes_received = recvfrom(args->peer.socket, &recv_buf, recv_buf_size, 0, (struct sockaddr *)&from, &fromlen)) > 0)
         {
             // printf("Received msg of type %d from node %d\n", get_msg_type(*recv_buf), get_msg_node_id(*recv_buf));
-            handle_data(*recv_buf);
+            handle_data(recv_buf);
         }
-        pthread_mutex_lock(mu);
+        pthread_mutex_lock(args->mutex);
     }
-    pthread_mutex_unlock(mu);
+    pthread_mutex_unlock(args->mutex);
 
+    free(args);
     printf("Freeing recv_buf...\n");
-    free(recv_buf);
-    return 0;
+    pthread_exit(NULL);
 }
 
-pthread_t *broadcast_until(long *msg, int *condition, pthread_mutex_t *mu)
+pthread_t *broadcast_until(long msg, int *condition, pthread_mutex_t *mu)
 {
     pthread_mutex_lock(&this_node.mu);
     pthread_t *threads = (pthread_t *)malloc(sizeof(pthread_t) * (this_node.num_nodes - 1));
@@ -419,32 +462,13 @@ pthread_t *broadcast_until(long *msg, int *condition, pthread_mutex_t *mu)
             continue;
         struct send_args *args = (struct send_args *)malloc(sizeof(struct send_args));
         args->msg = msg;
-        args->peer = &this_node.peers[i];
+        args->peer = this_node.peers[i];
         args->condition = condition;
         args->mutex = mu;
-        pthread_create(&threads[thread_count++], NULL, send_until_pthread, args);
+        pthread_create(&threads[thread_count++], NULL, send_until, args);
     }
     pthread_mutex_unlock(&this_node.mu);
     return threads;
-}
-
-void *send_until_pthread(void *void_args)
-{
-    struct send_args *args = (struct send_args *)void_args;
-    send_until(args->msg, args->peer, args->condition, args->mutex);
-    printf("Freeing send args...\n");
-    // free(args->msg); TODO: this gives double free error
-    free(args);
-    pthread_exit(NULL);
-}
-
-void *recv_until_pthread(void *void_args)
-{
-    struct recv_args *args = (struct recv_args *)void_args;
-    recv_until(args->peer, args->condition, args->mutex);
-    printf("Freeing receive args...\n");
-    free(args);
-    pthread_exit(NULL);
 }
 
 /* COORDINATION FUNCTIONS */
@@ -502,8 +526,7 @@ pthread_t *begin_heartbeats()
     pthread_mutex_lock(&this_node.mu);
     int *condition = &this_node.end_coordination;
     pthread_mutex_t *mu = &this_node.mu;
-    long *msg = (long *)malloc(sizeof(long));
-    *msg = encode_msg(heartbeat_msg, this_node.id, 0, 0);
+    long msg = encode_msg(heartbeat_msg, this_node.id, 0, 0);
     pthread_mutex_unlock(&this_node.mu);
 
     return broadcast_until(msg, condition, mu);
@@ -516,11 +539,11 @@ pthread_t *begin_listening()
     struct recv_args *args = (struct recv_args *)malloc(sizeof(struct recv_args));
 
     pthread_mutex_lock(&this_node.mu);
-    args->peer = &this_node.peers[this_node.id];
+    args->peer = this_node.peers[this_node.id];
     args->condition = &this_node.end_coordination;
     args->mutex = &this_node.mu;
     pthread_mutex_unlock(&this_node.mu);
-    pthread_create(listen_thread, NULL, recv_until_pthread, args);
+    pthread_create(listen_thread, NULL, recv_until, args);
 
     return listen_thread;
 }
@@ -598,8 +621,7 @@ int bully_election()
     int num_nodes = this_node.num_nodes;
     this_node.votes_received = 0;
     // this_node.term = this_node.term + 1; // TODO: add mod M for wrap around
-    long *msg = (long *)malloc(sizeof(long));
-    *msg = encode_msg(election_msg, this_node.id, this_node.term, get_link_info());
+    long msg = encode_msg(election_msg, this_node.id, this_node.term, get_link_info());
     pthread_mutex_unlock(&this_node.mu);
 
     printf("Starting broadcast of election msgs\n");
@@ -642,8 +664,7 @@ void *check_election_result() // TODO:
                 int num_nodes = this_node.num_nodes;
                 this_node.leader_id = this_node.id;
                 // send out leader message until coordination algorithm is terminated
-                long *msg = (long *)malloc(sizeof(long));
-                *msg = encode_msg(leader_msg, this_node.id, this_node.term, 0); // TODO: deal with path information
+                long msg = encode_msg(leader_msg, this_node.id, this_node.term, 0); // TODO: deal with path information
                 int *condition = &this_node.end_coordination;
                 pthread_mutex_t *mu = &this_node.mu;
                 pthread_mutex_unlock(&this_node.mu);
