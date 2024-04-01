@@ -53,6 +53,88 @@ recv_until() pthread routines
 struct coordination_node this_node;
 int hb_timeout_len = 1000;
 struct leader_chosen_info leader_chosen;
+struct thread_pool tpool;
+
+/* THREAD POOL FUNCTIONS */
+int thread_pool_init(int count)
+{
+    tpool.threads = (pthread_t *)malloc(sizeof(pthread_t) * count);
+    memset(tpool.threads, 0, sizeof(pthread_t) * count);
+    tpool.total_count = count;
+    tpool.num_allocated = 0;
+    pthread_mutex_init(&tpool.mu, NULL);
+    return 0;
+}
+
+int thread_pool_destroy()
+{
+    for (int i = 0; i < tpool.num_allocated; i++)
+    {
+        pthread_join(tpool.threads[i], NULL);
+    }
+    free(tpool.threads);
+    return 0;
+}
+
+int thread_pool_resize() // double size of thread pool
+{
+    if (tpool.total_count == 0)
+    {
+        fprintf(stderr, "Error: thread pool is empty, cannot resize\n");
+        return -1;
+    }
+
+    int new_count = tpool.total_count * 2;
+    pthread_t *new_threads = (pthread_t *)malloc(sizeof(pthread_t) * new_count);
+    memcpy(new_threads, tpool.threads, sizeof(pthread_t) * tpool.total_count);
+
+    pthread_t *threads_tmp = tpool.threads;
+
+    tpool.total_count = new_count;
+    tpool.threads = new_threads;
+
+    free(threads_tmp);
+
+    return 0;
+}
+
+int thread_pool_assign_task(void *func, void *args)
+{
+    return pthread_create(get_thread(), NULL, func, args);
+}
+
+pthread_t *get_thread()
+{
+    pthread_mutex_lock(&tpool.mu);
+
+    // if out of threads, make pool bigger
+    if (tpool.num_allocated == tpool.total_count)
+    {
+        thread_pool_resize();
+    }
+
+    pthread_t *ret_thread = &tpool.threads[tpool.num_allocated++];
+
+    pthread_mutex_unlock(&tpool.mu);
+    return ret_thread;
+}
+
+pthread_t *get_threads(int count)
+{
+    pthread_mutex_lock(&tpool.mu);
+
+    // if out of threads, make pool bigger
+    while (tpool.total_count - tpool.num_allocated < count)
+    {
+        thread_pool_resize();
+    }
+
+    pthread_t *ret_threads = &tpool.threads[tpool.num_allocated];
+    tpool.num_allocated += count;
+
+    pthread_mutex_unlock(&tpool.mu);
+    return ret_threads;
+}
 
 /* SIGNAL HANDLER */
 void sigint_handler()
@@ -84,19 +166,6 @@ int free_peer_info()
         freeaddrinfo(this_node.peers[i].address_info);
     }
     pthread_mutex_unlock(&this_node.mu);
-    return 0;
-}
-
-int join_and_free(pthread_t *threads, int count)
-{
-    pthread_t *curr_thread = threads;
-    for (int i = 0; i < count; i++)
-    {
-        pthread_join(*curr_thread, NULL);
-        curr_thread += 1;
-    }
-    printf("Freeing threads...\n");
-    free(threads);
     return 0;
 }
 
@@ -161,7 +230,6 @@ int get_msg_connected_count(long msg)
 int handle_data(long msg)
 {
     // find which handler function to call and spinoff thread calling that function
-    pthread_t handler_thread;
     int handler_thr_err;
 
     int type = get_msg_type(msg);
@@ -187,7 +255,7 @@ int handle_data(long msg)
         break;
     }
 
-    if ((handler_thr_err = pthread_create(&handler_thread, NULL, handler, (void *)msg)) != 0)
+    if ((handler_thr_err = thread_pool_assign_task(handler, (void *)msg)))
     {
         fprintf(stderr, "Error with creating handler thread\n");
         return handler_thr_err;
@@ -221,7 +289,6 @@ void *handle_election_msg(void *void_data)
     printf("Handling election msg received from node %d\n term = %d, connected_count = %d\n", node_id, term, connected_count);
 
     int reply_sent = 0;
-    pthread_t reply_thread;
     int election_over;
     pthread_mutex_t election_mu;
 
@@ -245,7 +312,7 @@ void *handle_election_msg(void *void_data)
             reply_args->peer = this_node.peers[node_id];
             reply_args->condition = &election_over;
             reply_args->mutex = &election_mu;
-            pthread_create(&reply_thread, NULL, send_until, reply_args);
+            thread_pool_assign_task(send_until, reply_args);
             reply_sent = 1;
         }
         // else don't give vote (ignore msg)
@@ -277,8 +344,6 @@ void *handle_election_msg(void *void_data)
         pthread_mutex_lock(&election_mu);
         election_over = 1;
         pthread_mutex_unlock(&election_mu);
-
-        pthread_join(reply_thread, NULL);
     }
 
     pthread_mutex_unlock(&this_node.mu);
@@ -451,11 +516,9 @@ void *recv_until(void *void_args)
     pthread_exit(NULL);
 }
 
-pthread_t *broadcast_until(long msg, int *condition, pthread_mutex_t *mu)
+int broadcast_until(long msg, int *condition, pthread_mutex_t *mu)
 {
     pthread_mutex_lock(&this_node.mu);
-    pthread_t *threads = (pthread_t *)malloc(sizeof(pthread_t) * (this_node.num_nodes - 1));
-    int thread_count = 0;
     for (int i = 0; i < this_node.num_nodes; i++)
     {
         if (this_node.peers[i].id == this_node.id) // don't send message to oneself
@@ -465,10 +528,10 @@ pthread_t *broadcast_until(long msg, int *condition, pthread_mutex_t *mu)
         args->peer = this_node.peers[i];
         args->condition = condition;
         args->mutex = mu;
-        pthread_create(&threads[thread_count++], NULL, send_until, args);
+        thread_pool_assign_task(send_until, args);
     }
     pthread_mutex_unlock(&this_node.mu);
-    return threads;
+    return 0;
 }
 
 /* COORDINATION FUNCTIONS */
@@ -479,33 +542,24 @@ int coordination()
     pthread_mutex_unlock(&this_node.mu);
 
     // start thread checking to start leader election
-    pthread_t start_election_thread;
-    pthread_create(&start_election_thread, NULL, begin_leader_election, NULL);
+    thread_pool_assign_task(begin_leader_election, NULL);
 
     // start thread checking status of leader election
-    pthread_t check_election_result_thread;
-    pthread_create(&check_election_result_thread, NULL, check_election_result, NULL);
+    thread_pool_assign_task(check_election_result, NULL);
 
     // being heartbeat timers and spinoff thread tracking heartbeat timers
-    pthread_t *hb_timer_thread = begin_heartbeat_timers();
+    begin_heartbeat_timers();
 
     // for each other node, spinoff thread sending periodic heartbeats
-    pthread_t *hb_threads = begin_heartbeats();
+    begin_heartbeats();
 
     // start thread listening for communication from other nodes
-    pthread_t *listening_thread = begin_listening();
-
-    // wait for all threads to finish and then free allocated memory
-    join_and_free(hb_timer_thread, 1);
-    join_and_free(hb_threads, num_nodes - 1);
-    join_and_free(listening_thread, 1);
-    pthread_join(start_election_thread, NULL);
-    pthread_join(check_election_result_thread, NULL);
+    begin_listening();
 
     return 0;
 }
 
-pthread_t *begin_heartbeat_timers()
+int begin_heartbeat_timers()
 {
     pthread_mutex_lock(&this_node.mu);
     for (int i = 0; i < this_node.num_nodes; i++)
@@ -516,12 +570,11 @@ pthread_t *begin_heartbeat_timers()
     }
     pthread_mutex_unlock(&this_node.mu);
 
-    pthread_t *hb_timer_thread = (pthread_t *)malloc(sizeof(pthread_t));
-    pthread_create(hb_timer_thread, NULL, track_heartbeat_timers, NULL);
-    return hb_timer_thread;
+    thread_pool_assign_task(track_heartbeat_timers, NULL);
+    return 0;
 }
 
-pthread_t *begin_heartbeats()
+int begin_heartbeats()
 {
     pthread_mutex_lock(&this_node.mu);
     int *condition = &this_node.end_coordination;
@@ -532,10 +585,8 @@ pthread_t *begin_heartbeats()
     return broadcast_until(msg, condition, mu);
 }
 
-pthread_t *begin_listening()
+int begin_listening()
 {
-    pthread_t *listen_thread = (pthread_t *)malloc(sizeof(pthread_t));
-
     struct recv_args *args = (struct recv_args *)malloc(sizeof(struct recv_args));
 
     pthread_mutex_lock(&this_node.mu);
@@ -543,9 +594,10 @@ pthread_t *begin_listening()
     args->condition = &this_node.end_coordination;
     args->mutex = &this_node.mu;
     pthread_mutex_unlock(&this_node.mu);
-    pthread_create(listen_thread, NULL, recv_until, args);
 
-    return listen_thread;
+    thread_pool_assign_task(recv_until, args);
+
+    return 0;
 }
 
 void *begin_leader_election() // TODO: add raft-style leader election option
@@ -625,7 +677,7 @@ int bully_election()
     pthread_mutex_unlock(&this_node.mu);
 
     printf("Starting broadcast of election msgs\n");
-    pthread_t *threads = broadcast_until(msg, &election_over, &election_mu); // NOTE: this returns quickly!
+    broadcast_until(msg, &election_over, &election_mu); // NOTE: this returns quickly!
 
     pthread_mutex_lock(&leader_chosen.mu);
     while (!leader_chosen.chosen)
@@ -637,8 +689,6 @@ int bully_election()
     pthread_mutex_lock(&election_mu);
     election_over = 1;
     pthread_mutex_unlock(&election_mu);
-
-    join_and_free(threads, num_nodes - 1);
 
     return 0;
 }
@@ -674,9 +724,7 @@ void *check_election_result() // TODO:
                 pthread_mutex_unlock(&leader_chosen.mu);
 
                 printf("Sending out leader message...\n");
-                pthread_t *threads = broadcast_until(msg, condition, mu);
-
-                join_and_free(threads, num_nodes - 1);
+                broadcast_until(msg, condition, mu);
 
                 pthread_mutex_lock(&this_node.mu);
             }
@@ -700,6 +748,9 @@ void *check_election_result() // TODO:
 
 int main(int argc, char **argv)
 {
+    // Initialize thread_pool
+    thread_pool_init(20); // TODO: adjust this value as needed
+
     // setup SIGINT handler
     struct sigaction sigact;
     memset(&sigact, 0, sizeof(sigact));
@@ -789,6 +840,8 @@ int main(int argc, char **argv)
     // pthread_mutex_lock(&this_node.mu);
     // this_node.end_coordination = 1;
     // pthread_mutex_unlock(&this_node.mu);
+
+    thread_pool_destroy();
 
     printf("Freeing peer_info and voted_peers...\n");
     free_peer_info();

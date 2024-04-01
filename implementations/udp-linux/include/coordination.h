@@ -10,6 +10,14 @@
 #include <sys/time.h>
 
 /* STRUCTS */
+struct thread_pool
+{
+    pthread_t *threads;
+    int total_count;
+    int num_allocated;
+    pthread_mutex_t mu;
+};
+
 struct peer_info
 {
     int id;
@@ -63,13 +71,20 @@ enum msg_type
     leader_msg
 };
 
+/* THREAD POOL FUNCTIONS */
+int thread_pool_init(int count);
+int thread_pool_destroy();
+int thread_pool_resize();
+int thread_pool_assign_task(void *func, void *args);
+pthread_t *get_thread();
+pthread_t *get_threads(int count);
+
 /* SIGNAL HANDLER */
 void sigint_handler();
 
 /* UTILS*/
 double get_elapsed_time_ms(struct timeval start);
 int free_peer_info();
-int join_and_free(pthread_t *threads, int count);
 long encode_msg(unsigned short type, unsigned short node_id, unsigned short term, unsigned short path_or_link_info);
 short get_link_info();
 short get_msg_type(long msg);
@@ -91,13 +106,13 @@ int prepare_address_info(char *address, char *port, struct peer_info *peer);
 int prepare_socket(struct peer_info *peer);
 void *send_until(void *void_args);
 void *recv_until(void *void_args);
-pthread_t *broadcast_until(long msg, int *condition, pthread_mutex_t *mu);
+int broadcast_until(long msg, int *condition, pthread_mutex_t *mu);
 
 /* COORDINATION FUNCTIONS */
 int coordination();
-pthread_t *begin_heartbeat_timers();
-pthread_t *begin_heartbeats();
-pthread_t *begin_listening();
+int begin_heartbeat_timers();
+int begin_heartbeats();
+int begin_listening();
 void *begin_leader_election();
 void *track_heartbeat_timers();
 int bully_election();
