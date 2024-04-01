@@ -503,7 +503,6 @@ void *recv_until(void *void_args)
     pthread_mutex_unlock(args->mutex);
 
     free(args);
-    printf("Freeing recv_buf...\n");
     pthread_exit(NULL);
 }
 
@@ -787,7 +786,6 @@ void *check_election_result()
         {
             pthread_mutex_unlock(&this_node.mu);
             pthread_cond_wait(&election_status.cond, &election_status.mu);
-            printf("Checking election result...\n");
 
             // to avoid deadlock, reacquire locks in correct order (this_node.mu -> election_status.mu)
             pthread_mutex_unlock(&election_status.mu);
@@ -889,7 +887,6 @@ int main(int argc, char **argv)
         prepare_address_info(address, port, &peers[i]);
         prepare_socket(&peers[i]);
         peers[i].connected = 1;
-        printf("Freeing address and port...\n");
         free(address);
         free(port);
     }
