@@ -56,9 +56,9 @@ struct recv_args
     pthread_mutex_t *mutex;
 };
 
-struct leader_chosen_info
+struct condition_variable
 {
-    int chosen;
+    int status;
     pthread_cond_t cond;
     pthread_mutex_t mu;
 };
@@ -69,6 +69,13 @@ enum msg_type
     election_msg,
     election_reply_msg,
     leader_msg
+};
+
+enum election_statuses
+{
+    inactive,    // not started or finished
+    starting,    // about to start
+    in_progress, // in progress
 };
 
 /* THREAD POOL FUNCTIONS */
@@ -113,7 +120,8 @@ int coordination();
 int begin_heartbeat_timers();
 int begin_heartbeats();
 int begin_listening();
-void *begin_leader_election();
+void *trigger_election();
 void *track_heartbeat_timers();
+void *heartbeat_timeout_handler(void *void_args);
 int bully_election();
 void *check_election_result();

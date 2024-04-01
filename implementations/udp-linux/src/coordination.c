@@ -52,7 +52,7 @@ recv_until() pthread routines
 /* GLOBAL DATA */
 struct coordination_node this_node;
 int hb_timeout_len = 1000;
-struct leader_chosen_info leader_chosen;
+struct condition_variable election_status;
 struct thread_pool tpool;
 
 /* THREAD POOL FUNCTIONS */
@@ -144,10 +144,9 @@ void sigint_handler()
     this_node.end_coordination = 1;
     pthread_mutex_unlock(&this_node.mu);
 
-    pthread_mutex_lock(&leader_chosen.mu);
-    leader_chosen.chosen = 1;
-    pthread_cond_broadcast(&leader_chosen.cond);
-    pthread_mutex_unlock(&leader_chosen.mu);
+    pthread_mutex_lock(&election_status.mu);
+    pthread_cond_broadcast(&election_status.cond);
+    pthread_mutex_unlock(&election_status.mu);
 }
 
 /* UTILS */
@@ -323,10 +322,10 @@ void *handle_election_msg(void *void_data)
         this_node.term = term;
         pthread_mutex_unlock(&this_node.mu);
 
-        pthread_mutex_lock(&leader_chosen.mu);
-        leader_chosen.chosen = 0;
-        pthread_cond_broadcast(&leader_chosen.cond);
-        pthread_mutex_unlock(&leader_chosen.mu);
+        pthread_mutex_lock(&election_status.mu);
+        election_status.status = starting;
+        pthread_cond_broadcast(&election_status.cond);
+        pthread_mutex_unlock(&election_status.mu);
 
         pthread_mutex_lock(&this_node.mu);
     }
@@ -334,15 +333,15 @@ void *handle_election_msg(void *void_data)
 
     if (reply_sent) // if reply sent, stop sending reply msgs when election ends
     {
-        pthread_mutex_lock(&leader_chosen.mu);
-        while (!leader_chosen.chosen)
+        pthread_mutex_lock(&election_status.mu);
+        while (election_status.status != inactive) // TODO: || this_node.term > term
         {
-            pthread_cond_wait(&leader_chosen.cond, &leader_chosen.mu);
+            pthread_cond_wait(&election_status.cond, &election_status.mu);
         }
-        pthread_mutex_unlock(&leader_chosen.mu);
+        pthread_mutex_unlock(&election_status.mu);
 
         pthread_mutex_lock(&election_mu);
-        election_over = 1;
+        election_over = 1; // TODO: this variable might go out of scope while child thread is still using it!!!
         pthread_mutex_unlock(&election_mu);
     }
 
@@ -379,9 +378,9 @@ void *handle_election_reply(void *void_data) // TODO: deal with path/link info
     this_node.voted_peers[this_node.votes_received] = node_id;
     ++this_node.votes_received;
 
-    pthread_mutex_lock(&leader_chosen.mu);
-    pthread_cond_broadcast(&leader_chosen.cond); // to wake up check_election_result()
-    pthread_mutex_unlock(&leader_chosen.mu);
+    pthread_mutex_lock(&election_status.mu);
+    pthread_cond_broadcast(&election_status.cond); // to wake up check_election_result()
+    pthread_mutex_unlock(&election_status.mu);
 
     pthread_mutex_unlock(&this_node.mu);
     pthread_exit(NULL);
@@ -402,10 +401,10 @@ void *handle_leader_msg(void *void_data)
     pthread_mutex_unlock(&this_node.mu);
 
     printf("Acknowledging node %d is leader of term %d", get_msg_node_id(msg), this_node.term);
-    pthread_mutex_lock(&leader_chosen.mu);
-    leader_chosen.chosen = 1;
-    pthread_cond_broadcast(&leader_chosen.cond);
-    pthread_mutex_unlock(&leader_chosen.mu);
+    pthread_mutex_lock(&election_status.mu);
+    election_status.status = inactive; // TODO:
+    pthread_cond_broadcast(&election_status.cond);
+    pthread_mutex_unlock(&election_status.mu);
 
     pthread_mutex_lock(&this_node.mu);
     this_node.leader_id = get_msg_node_id(msg);
@@ -537,12 +536,9 @@ int broadcast_until(long msg, int *condition, pthread_mutex_t *mu)
 /* COORDINATION FUNCTIONS */
 int coordination()
 {
-    pthread_mutex_lock(&this_node.mu);
-    int num_nodes = this_node.num_nodes;
-    pthread_mutex_unlock(&this_node.mu);
 
     // start thread checking to start leader election
-    thread_pool_assign_task(begin_leader_election, NULL);
+    thread_pool_assign_task(trigger_election, NULL);
 
     // start thread checking status of leader election
     thread_pool_assign_task(check_election_result, NULL);
@@ -600,19 +596,23 @@ int begin_listening()
     return 0;
 }
 
-void *begin_leader_election() // TODO: add raft-style leader election option
+void *trigger_election() // TODO: add raft-style leader election option
 {
-    pthread_mutex_lock(&this_node.mu);
-    pthread_mutex_lock(&leader_chosen.mu);
-    while (leader_chosen.chosen && !this_node.end_coordination)
+    while (!this_node.end_coordination)
     {
-        pthread_mutex_unlock(&this_node.mu);
-        pthread_cond_wait(&leader_chosen.cond, &leader_chosen.mu);
         pthread_mutex_lock(&this_node.mu);
+        pthread_mutex_lock(&election_status.mu);
+        while (election_status.status != starting && !this_node.end_coordination)
+        {
+            pthread_mutex_unlock(&this_node.mu);
+            pthread_cond_wait(&election_status.cond, &election_status.mu);
+            pthread_mutex_lock(&this_node.mu);
+        }
+        pthread_mutex_unlock(&this_node.mu);
+        pthread_mutex_unlock(&election_status.mu);
+        bully_election();
     }
-    pthread_mutex_unlock(&this_node.mu);
-    pthread_mutex_unlock(&leader_chosen.mu);
-    bully_election();
+
     return 0;
 }
 
@@ -626,32 +626,11 @@ void *track_heartbeat_timers()
         {
             if (this_node.peers[i].id == this_node.id)
                 continue;
-            if (get_elapsed_time_ms(this_node.peers[i].timeout_start) > hb_timeout_len)
+            if (this_node.peers[i].connected && get_elapsed_time_ms(this_node.peers[i].timeout_start) > hb_timeout_len)
             {
                 this_node.connected_count -= 1;
                 this_node.peers[i].connected = 0;
-
-                pthread_mutex_lock(&leader_chosen.mu);
-                if (leader_chosen.chosen) // not yet in election
-                {
-                    printf("No heartbeat received from node %d! Starting leader election...\n", this_node.peers[i].id);
-                    printf("Connected count is now %d\n", this_node.connected_count);
-                    leader_chosen.chosen = 0; // for starting election
-                    pthread_cond_broadcast(&leader_chosen.cond);
-                    pthread_mutex_unlock(&leader_chosen.mu);
-                    this_node.term++;
-                    pthread_mutex_unlock(&this_node.mu);
-                }
-                else // already in election
-                {
-                    printf("No heartbeat received from node %d! Already in leader election...\n", this_node.peers[i].id);
-                    printf("Connected count is now %d\n", this_node.connected_count);
-                    pthread_cond_broadcast(&leader_chosen.cond); // leader may be chosen
-                    pthread_mutex_unlock(&leader_chosen.mu);
-                    pthread_mutex_unlock(&this_node.mu);
-                }
-
-                return 0;
+                thread_pool_assign_task(heartbeat_timeout_handler, (void *)(long)i); // TODO: args
             }
         }
         pthread_mutex_unlock(&this_node.mu);
@@ -663,6 +642,35 @@ void *track_heartbeat_timers()
     return 0;
 }
 
+void *heartbeat_timeout_handler(void *void_args)
+{
+    // args: (int peer_id)
+    int peer_id = (long)void_args;
+
+    pthread_mutex_lock(&this_node.mu);
+
+    pthread_mutex_lock(&election_status.mu);
+    if (election_status.status == inactive) // not yet in election
+    {
+        printf("No heartbeat received from node %d! Starting leader election...\n", this_node.peers[peer_id].id);
+        printf("Connected count is now %d\n", this_node.connected_count);
+
+        this_node.term++;                  // TODO: add mod M for wrap around
+        election_status.status = starting; // to trigger election start
+    }
+    else // already in election, but timeout might trigger leader to be chosen
+    {
+        printf("No heartbeat received from node %d! Already in leader election...\n", this_node.peers[peer_id].id);
+        printf("Connected count is now %d\n", this_node.connected_count);
+    }
+
+    pthread_cond_broadcast(&election_status.cond);
+    pthread_mutex_unlock(&election_status.mu);
+    pthread_mutex_unlock(&this_node.mu);
+
+    return 0;
+}
+
 int bully_election()
 {
     pthread_mutex_t election_mu; // allocate in heap so doesn't disappear
@@ -670,21 +678,24 @@ int bully_election()
     int election_over = 0;
 
     pthread_mutex_lock(&this_node.mu);
-    int num_nodes = this_node.num_nodes;
     this_node.votes_received = 0;
-    // this_node.term = this_node.term + 1; // TODO: add mod M for wrap around
     long msg = encode_msg(election_msg, this_node.id, this_node.term, get_link_info());
     pthread_mutex_unlock(&this_node.mu);
 
-    printf("Starting broadcast of election msgs\n");
-    broadcast_until(msg, &election_over, &election_mu); // NOTE: this returns quickly!
+    pthread_mutex_lock(&election_status.mu);
+    election_status.status = in_progress;
+    pthread_cond_broadcast(&election_status.cond);
+    pthread_mutex_unlock(&election_status.mu);
 
-    pthread_mutex_lock(&leader_chosen.mu);
-    while (!leader_chosen.chosen)
+    printf("Starting broadcast of election msgs\n");
+    broadcast_until(msg, &election_over, &election_mu); // NOTE: this returns quickly! TODO: what if this function terminates before broadcast_until? election_over will disappear
+
+    pthread_mutex_lock(&election_status.mu);
+    while (!election_status.status == inactive) // wait for election to end
     {
-        pthread_cond_wait(&leader_chosen.cond, &leader_chosen.mu);
+        pthread_cond_wait(&election_status.cond, &election_status.mu);
     }
-    pthread_mutex_unlock(&leader_chosen.mu);
+    pthread_mutex_unlock(&election_status.mu);
 
     pthread_mutex_lock(&election_mu);
     election_over = 1;
@@ -695,23 +706,24 @@ int bully_election()
 
 void *check_election_result() // TODO:
 {
+    pthread_mutex_lock(&this_node.mu);
+
     // printf("STARTING THREAD CHECKING ELECTION RESULT\n");
     while (!this_node.end_coordination)
     {
-        pthread_mutex_lock(&leader_chosen.mu);
-        while (leader_chosen.chosen && !this_node.end_coordination) // not in election, just sleep
+        pthread_mutex_lock(&election_status.mu);
+        while (election_status.status != in_progress && !this_node.end_coordination) // not in election, just sleep
         {
             pthread_mutex_unlock(&this_node.mu);
-            pthread_cond_wait(&leader_chosen.cond, &leader_chosen.mu);
+            pthread_cond_wait(&election_status.cond, &election_status.mu);
             printf("Checking election result...\n");
             pthread_mutex_lock(&this_node.mu);
         }
-        while (!leader_chosen.chosen && !this_node.end_coordination)
+        while (election_status.status == in_progress && !this_node.end_coordination)
         {
-            if (this_node.votes_received == this_node.connected_count)
+            if (this_node.votes_received >= this_node.connected_count)
             {
                 printf("I won leader election of term %d!\n", this_node.term);
-                int num_nodes = this_node.num_nodes;
                 this_node.leader_id = this_node.id;
                 // send out leader message until coordination algorithm is terminated
                 long msg = encode_msg(leader_msg, this_node.id, this_node.term, 0); // TODO: deal with path information
@@ -719,26 +731,24 @@ void *check_election_result() // TODO:
                 pthread_mutex_t *mu = &this_node.mu;
                 pthread_mutex_unlock(&this_node.mu);
 
-                leader_chosen.chosen = 1;
-                pthread_cond_broadcast(&leader_chosen.cond);
-                pthread_mutex_unlock(&leader_chosen.mu);
+                election_status.status = inactive;
+                pthread_cond_broadcast(&election_status.cond);
+                pthread_mutex_unlock(&election_status.mu);
 
                 printf("Sending out leader message...\n");
                 broadcast_until(msg, condition, mu);
-
-                pthread_mutex_lock(&this_node.mu);
             }
             else
             {
                 printf("Did not win election yet...sleeping again\n");
                 pthread_mutex_unlock(&this_node.mu);
-                pthread_cond_wait(&leader_chosen.cond, &leader_chosen.mu);
+                pthread_cond_wait(&election_status.cond, &election_status.mu);
                 printf("Checking election result...\n");
                 pthread_mutex_lock(&this_node.mu);
             }
         }
 
-        pthread_mutex_unlock(&leader_chosen.mu);
+        pthread_mutex_unlock(&election_status.mu);
 
         // printf("THREAD CHECKING ELECTION RESULT\n");
         // return while holding this_node.mu
@@ -830,9 +840,9 @@ int main(int argc, char **argv)
     }
 
     // setup leader_chosen structure to signal end of election
-    leader_chosen.chosen = 1; // == 1 because not in election
-    pthread_cond_init(&leader_chosen.cond, NULL);
-    pthread_mutex_init(&leader_chosen.mu, NULL);
+    election_status.status = inactive;
+    pthread_cond_init(&election_status.cond, NULL);
+    pthread_mutex_init(&election_status.mu, NULL);
 
     // begin coordination algorithm
     coordination();
