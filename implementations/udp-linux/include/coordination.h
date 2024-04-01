@@ -41,12 +41,14 @@ struct coordination_node
     int *voted_peers;
 };
 
-struct send_args
+struct send_args // not all fields may be used
 {
     long msg;
     struct peer_info peer;
     int *condition;
     pthread_mutex_t *mutex;
+    int term;
+    int path_info;
 };
 
 struct recv_args
@@ -114,6 +116,10 @@ int prepare_socket(struct peer_info *peer);
 void *send_until(void *void_args);
 void *recv_until(void *void_args);
 int broadcast_until(long msg, int *condition, pthread_mutex_t *mu);
+int broadcast_heartbeat();
+void *send_election_reply_msg(void *void_args);
+void *broadcast_election_msg(void *void_args);
+void *broadcast_leader_msg(void *void_args);
 
 /* COORDINATION FUNCTIONS */
 int coordination();

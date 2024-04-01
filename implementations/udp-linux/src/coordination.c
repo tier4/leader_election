@@ -287,10 +287,6 @@ void *handle_election_msg(void *void_data)
 
     printf("Handling election msg received from node %d\n term = %d, connected_count = %d\n", node_id, term, connected_count);
 
-    int reply_sent = 0;
-    int election_over;
-    pthread_mutex_t election_mu;
-
     pthread_mutex_lock(&this_node.mu);
 
     if (term == this_node.term)
@@ -303,16 +299,10 @@ void *handle_election_msg(void *void_data)
             // TODO: will the below strategy overload the network if tons of msgs from old terms are being sent? I think its okay
             // send vote msg until leader election is over (may be dropped)
             struct send_args *reply_args = (struct send_args *)malloc(sizeof(struct send_args));
-            long reply_msg = encode_msg(election_reply_msg, this_node.id, this_node.term, get_link_info());
-            election_over = 0;
-            pthread_mutex_init(&election_mu, NULL);
 
-            reply_args->msg = reply_msg;
+            reply_args->term = this_node.term;
             reply_args->peer = this_node.peers[node_id];
-            reply_args->condition = &election_over;
-            reply_args->mutex = &election_mu;
-            thread_pool_assign_task(send_until, reply_args);
-            reply_sent = 1;
+            thread_pool_assign_task(send_election_reply_msg, reply_args);
         }
         // else don't give vote (ignore msg)
     }
@@ -330,20 +320,6 @@ void *handle_election_msg(void *void_data)
         pthread_mutex_lock(&this_node.mu);
     }
     // else received msg term is old, can ignore the msg
-
-    if (reply_sent) // if reply sent, stop sending reply msgs when election ends
-    {
-        pthread_mutex_lock(&election_status.mu);
-        while (election_status.status != inactive) // TODO: || this_node.term > term
-        {
-            pthread_cond_wait(&election_status.cond, &election_status.mu);
-        }
-        pthread_mutex_unlock(&election_status.mu);
-
-        pthread_mutex_lock(&election_mu);
-        election_over = 1; // TODO: this variable might go out of scope while child thread is still using it!!!
-        pthread_mutex_unlock(&election_mu);
-    }
 
     pthread_mutex_unlock(&this_node.mu);
     pthread_exit(NULL);
@@ -441,6 +417,19 @@ int prepare_socket(struct peer_info *peer)
     return 0;
 }
 
+int send_once(long msg, struct peer_info target)
+{
+    int bytes_sent;
+    struct addrinfo *address_info = target.address_info;
+    // printf("Sending msg of type %d to node %d\n", get_msg_type(*msg), target->id);
+    if ((bytes_sent = sendto(target.socket, &msg, sizeof(long), 0, address_info->ai_addr, address_info->ai_addrlen)) == -1)
+    {
+        fprintf(stderr, "Error with sending data\n");
+        return -1;
+    }
+    return 0;
+}
+
 void *send_until(void *void_args)
 {
     // get args: (long msg, struct peer_info target, int *condition, pthread_mutex_t *mu)
@@ -515,7 +504,7 @@ void *recv_until(void *void_args)
     pthread_exit(NULL);
 }
 
-int broadcast_until(long msg, int *condition, pthread_mutex_t *mu)
+int broadcast_heartbeat()
 {
     pthread_mutex_lock(&this_node.mu);
     for (int i = 0; i < this_node.num_nodes; i++)
@@ -523,14 +512,106 @@ int broadcast_until(long msg, int *condition, pthread_mutex_t *mu)
         if (this_node.peers[i].id == this_node.id) // don't send message to oneself
             continue;
         struct send_args *args = (struct send_args *)malloc(sizeof(struct send_args));
-        args->msg = msg;
+        args->msg = encode_msg(heartbeat_msg, this_node.id, 0, 0);
         args->peer = this_node.peers[i];
-        args->condition = condition;
-        args->mutex = mu;
+        args->condition = &this_node.end_coordination;
+        args->mutex = &this_node.mu;
         thread_pool_assign_task(send_until, args);
     }
     pthread_mutex_unlock(&this_node.mu);
     return 0;
+}
+
+void *send_election_reply_msg(void *void_args)
+{
+    // args: (int term, struct peer_info target)
+    struct send_args *args = (struct send_args *)void_args;
+
+    pthread_mutex_lock(&this_node.mu);
+    pthread_mutex_lock(&election_status.mu);
+    while (args->term == this_node.term && election_status.status == in_progress)
+    {
+        pthread_mutex_unlock(&election_status.mu);
+
+        // send
+        long msg = encode_msg(election_reply_msg, this_node.id, args->term, get_link_info());
+        send_once(msg, args->peer);
+
+        // sleep
+        pthread_mutex_unlock(&this_node.mu);
+        struct timespec ts;
+        ts.tv_sec = 0;
+        ts.tv_nsec = 100 * 1000 * 1000; // 100ms TODO: adjustable
+        nanosleep(&ts, NULL);
+        pthread_mutex_lock(&this_node.mu);
+        pthread_mutex_lock(&election_status.mu);
+    }
+    pthread_mutex_unlock(&this_node.mu);
+    free(args);
+    pthread_exit(NULL);
+}
+
+void *broadcast_election_msg(void *void_args)
+{
+    // args: (int term)
+    struct send_args *args = (struct send_args *)void_args;
+
+    pthread_mutex_lock(&this_node.mu);
+    pthread_mutex_lock(&election_status.mu);
+    while (args->term == this_node.term && election_status.status == in_progress)
+    {
+        pthread_mutex_unlock(&election_status.mu);
+        for (int i = 0; i < this_node.num_nodes; i++)
+        {
+            if (i == this_node.id)
+                continue;
+
+            // send
+            long msg = encode_msg(election_msg, this_node.id, args->term, get_link_info());
+            struct peer_info target = this_node.peers[i];
+            send_once(msg, target);
+        }
+        // sleep
+        pthread_mutex_unlock(&this_node.mu);
+        struct timespec ts;
+        ts.tv_sec = 0;
+        ts.tv_nsec = 100 * 1000 * 1000; // 100ms TODO: adjustable
+        nanosleep(&ts, NULL);
+        pthread_mutex_lock(&this_node.mu);
+        pthread_mutex_lock(&election_status.mu);
+    }
+    pthread_mutex_unlock(&this_node.mu);
+    pthread_exit(NULL);
+}
+
+void *broadcast_leader_msg(void *void_args)
+{
+    // args: (int term, int path_info)
+    struct send_args *args = (struct send_args *)void_args;
+
+    pthread_mutex_lock(&this_node.mu);
+    while (args->term == this_node.term)
+    {
+        for (int i = 0; i < this_node.num_nodes; i++)
+        {
+            if (i == this_node.id)
+                continue;
+
+            // send
+            long msg = encode_msg(leader_msg, this_node.id, args->term, args->path_info);
+            struct peer_info target = this_node.peers[i];
+            send_once(msg, target); // TODO: deal with path_info
+        }
+        // sleep
+        pthread_mutex_unlock(&this_node.mu);
+        struct timespec ts;
+        ts.tv_sec = 0;
+        ts.tv_nsec = 100 * 1000 * 1000; // 100ms TODO: adjustable
+        nanosleep(&ts, NULL);
+        pthread_mutex_lock(&this_node.mu);
+    }
+    pthread_mutex_unlock(&this_node.mu);
+    pthread_exit(NULL);
 }
 
 /* COORDINATION FUNCTIONS */
@@ -572,13 +653,7 @@ int begin_heartbeat_timers()
 
 int begin_heartbeats()
 {
-    pthread_mutex_lock(&this_node.mu);
-    int *condition = &this_node.end_coordination;
-    pthread_mutex_t *mu = &this_node.mu;
-    long msg = encode_msg(heartbeat_msg, this_node.id, 0, 0);
-    pthread_mutex_unlock(&this_node.mu);
-
-    return broadcast_until(msg, condition, mu);
+    return broadcast_heartbeat();
 }
 
 int begin_listening()
@@ -618,7 +693,7 @@ void *trigger_election() // TODO: add raft-style leader election option
 
 void *track_heartbeat_timers()
 {
-    sleep(5); // TODO: change this to hold until exchange heartbeats with everyone, currently give 10 seconds for everyone to get up and running
+    sleep(5); // TODO: change this to hold until exchange heartbeats with everyone, currently give 5 seconds for everyone to get up and running
     pthread_mutex_lock(&this_node.mu);
     while (!this_node.end_coordination)
     {
@@ -630,7 +705,7 @@ void *track_heartbeat_timers()
             {
                 this_node.connected_count -= 1;
                 this_node.peers[i].connected = 0;
-                thread_pool_assign_task(heartbeat_timeout_handler, (void *)(long)i); // TODO: args
+                thread_pool_assign_task(heartbeat_timeout_handler, (void *)(long)i);
             }
         }
         pthread_mutex_unlock(&this_node.mu);
@@ -673,13 +748,9 @@ void *heartbeat_timeout_handler(void *void_args)
 
 int bully_election()
 {
-    pthread_mutex_t election_mu; // allocate in heap so doesn't disappear
-    pthread_mutex_init(&election_mu, NULL);
-    int election_over = 0;
-
     pthread_mutex_lock(&this_node.mu);
     this_node.votes_received = 0;
-    long msg = encode_msg(election_msg, this_node.id, this_node.term, get_link_info());
+    int term = this_node.term;
     pthread_mutex_unlock(&this_node.mu);
 
     pthread_mutex_lock(&election_status.mu);
@@ -688,23 +759,14 @@ int bully_election()
     pthread_mutex_unlock(&election_status.mu);
 
     printf("Starting broadcast of election msgs\n");
-    broadcast_until(msg, &election_over, &election_mu); // NOTE: this returns quickly! TODO: what if this function terminates before broadcast_until? election_over will disappear
-
-    pthread_mutex_lock(&election_status.mu);
-    while (!election_status.status == inactive) // wait for election to end
-    {
-        pthread_cond_wait(&election_status.cond, &election_status.mu);
-    }
-    pthread_mutex_unlock(&election_status.mu);
-
-    pthread_mutex_lock(&election_mu);
-    election_over = 1;
-    pthread_mutex_unlock(&election_mu);
+    struct send_args *args = (struct send_args *)malloc(sizeof(struct send_args));
+    args->term = term;
+    thread_pool_assign_task(broadcast_election_msg, args); // TODO: args
 
     return 0;
 }
 
-void *check_election_result() // TODO:
+void *check_election_result()
 {
     pthread_mutex_lock(&this_node.mu);
 
@@ -726,9 +788,7 @@ void *check_election_result() // TODO:
                 printf("I won leader election of term %d!\n", this_node.term);
                 this_node.leader_id = this_node.id;
                 // send out leader message until coordination algorithm is terminated
-                long msg = encode_msg(leader_msg, this_node.id, this_node.term, 0); // TODO: deal with path information
-                int *condition = &this_node.end_coordination;
-                pthread_mutex_t *mu = &this_node.mu;
+                int term = this_node.term;
                 pthread_mutex_unlock(&this_node.mu);
 
                 election_status.status = inactive;
@@ -736,7 +796,10 @@ void *check_election_result() // TODO:
                 pthread_mutex_unlock(&election_status.mu);
 
                 printf("Sending out leader message...\n");
-                broadcast_until(msg, condition, mu);
+                struct send_args *args = (struct send_args *)malloc(sizeof(struct send_args));
+                args->term = term;
+                args->path_info = 0; // TODO: path information
+                thread_pool_assign_task(broadcast_leader_msg, args);
             }
             else
             {
