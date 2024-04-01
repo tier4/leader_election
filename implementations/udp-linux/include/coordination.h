@@ -10,6 +10,12 @@
 #include <sys/time.h>
 
 /* STRUCTS */
+
+struct path
+{
+    int node1;
+    int node2;
+};
 struct thread_pool
 {
     pthread_t *threads;
@@ -25,8 +31,8 @@ struct peer_info
     struct addrinfo *address_info;
     int socket;
     int connected;
+    unsigned short link_info;
 };
-
 struct coordination_node
 {
     int id;
@@ -131,3 +137,7 @@ void *track_heartbeat_timers();
 void *heartbeat_timeout_handler(void *void_args);
 int bully_election();
 void *check_election_result();
+short path_struct_to_short(struct path p);
+short get_best_path();
+int path_is_valid(struct path p);
+int connected(int node1, int node2);

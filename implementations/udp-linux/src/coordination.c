@@ -49,9 +49,17 @@ or "heartbeat_timeout()"
 recv_until() pthread routines
 */
 
+// Heartbeat timeout length
+#define HB_TIMEOUT_LEN 1000
+
+// Hardcoded paths (ORDERED BY PRIORITY)
+#define NUM_PATHS 4
+// assume in node_id order, we have (Main ECU, Sub ECU, Main VCU, Sub VCU)
+// then highest priority path is (Main ECU, Main VCU) or (0, 2) w/node_ids
+struct path paths[NUM_PATHS] = {{0, 2}, {0, 3}, {1, 2}, {1, 3}};
+
 /* GLOBAL DATA */
 struct coordination_node this_node;
-int hb_timeout_len = 1000;
 struct condition_variable election_status;
 struct thread_pool tpool;
 
@@ -328,7 +336,7 @@ void *handle_election_msg(void *void_data)
     pthread_exit(NULL);
 }
 
-void *handle_election_reply(void *void_data) // TODO: deal with path/link info
+void *handle_election_reply(void *void_data)
 {
     long msg = (long)void_data;
     int term = get_msg_term(msg);
@@ -341,6 +349,10 @@ void *handle_election_reply(void *void_data) // TODO: deal with path/link info
         pthread_mutex_unlock(&this_node.mu);
         pthread_exit(NULL);
     }
+
+    // update link info
+    this_node.peers[node_id].link_info = get_msg_link_info(msg);
+
     // make sure not to count multiple votes from same peer
     for (int i = 0; i < this_node.votes_received; i++)
     {
@@ -365,7 +377,7 @@ void *handle_election_reply(void *void_data) // TODO: deal with path/link info
     pthread_exit(NULL);
 }
 
-void *handle_leader_msg(void *void_data)
+void *handle_leader_msg(void *void_data) // TODO: deal with path_info
 {
     printf("Received leader message...\n");
 
@@ -709,7 +721,7 @@ void *track_heartbeat_timers()
         {
             if (this_node.peers[i].id == this_node.id)
                 continue;
-            if (this_node.peers[i].connected && get_elapsed_time_ms(this_node.peers[i].timeout_start) > hb_timeout_len)
+            if (this_node.peers[i].connected && get_elapsed_time_ms(this_node.peers[i].timeout_start) > HB_TIMEOUT_LEN)
             {
                 this_node.connected_count -= 1;
                 this_node.peers[i].connected = 0;
@@ -809,7 +821,14 @@ void *check_election_result()
                 printf("Sending out leader message...\n");
                 struct send_args *args = (struct send_args *)malloc(sizeof(struct send_args));
                 args->term = term;
-                args->path_info = 0; // TODO: path information
+                args->path_info = get_best_path(); // TODO: path information
+
+                if (args->path_info == 0)
+                {
+                    fprintf(stderr, "NO PATH FOUND!!! Exiting...\n");
+                    exit(1);
+                }
+
                 thread_pool_assign_task(broadcast_leader_msg, args);
             }
             else
@@ -832,6 +851,51 @@ void *check_election_result()
         // return while holding this_node.mu
     }
     return 0;
+}
+
+short path_struct_to_short(struct path p)
+{
+    short res = 0;
+    for (int i = 0; i < this_node.num_nodes; i++) // TODO: get mutex
+    {
+        if (i == p.node1 || i == p.node2)
+            res = (res << 1) + 1;
+        else
+            res = res << 1;
+    }
+    return res;
+}
+
+short get_best_path() // use global paths[] (ordered by priority, hardcoded value)
+{
+    // just check paths in order of priority
+    for (int i = 0; i < NUM_PATHS; i++)
+    {
+        if (path_is_valid(paths[i]))
+            return path_struct_to_short(paths[i]);
+    }
+
+    fprintf(stderr, "NO PATHS AVAILABLE!!!\n");
+    return 0;
+}
+
+int path_is_valid(struct path p) // path should be pair of node ids
+{
+    // make sure both nodes believe they are connected to each other
+    return (connected(p.node1, p.node2) && connected(p.node2, p.node1));
+}
+
+int connected(int node1, int node2) // check that node1 sees node2
+{
+    pthread_mutex_lock(&this_node.mu);
+
+    short link_info1 = this_node.peers[node1].link_info;
+
+    int offset = (this_node.num_nodes - 1) - node2; // e.g. num_nodes = 3, node2 = 1, offset = 1
+
+    pthread_mutex_unlock(&this_node.mu);
+
+    return (link_info1 >> offset) && 0x01;
 }
 
 int main(int argc, char **argv)
@@ -887,6 +951,7 @@ int main(int argc, char **argv)
         prepare_address_info(address, port, &peers[i]);
         prepare_socket(&peers[i]);
         peers[i].connected = 1;
+        peers[i].link_info = 0;
         free(address);
         free(port);
     }
@@ -900,9 +965,10 @@ int main(int argc, char **argv)
     int my_id = strtol(argv[3], NULL, 10);
     this_node.id = my_id;
 
-    // set term = 0, connected_count = num_nodes - 1, no disconnected nodes
+    // set term = 0, connected_count = num_nodes - 1, no disconnected nodes, path accordingly
     this_node.term = 0;
     this_node.connected_count = num_nodes - 1;
+    this_node.peers[this_node.id].link_info = 15; // 1111 in binary, or all connected
     printf("Starting with connected_count = %d\n", this_node.connected_count);
 
     // no leader to start
