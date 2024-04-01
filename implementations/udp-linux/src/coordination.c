@@ -379,7 +379,7 @@ void *handle_leader_msg(void *void_data)
     }
     pthread_mutex_unlock(&this_node.mu);
 
-    printf("Acknowledging node %d is leader of term %d", get_msg_node_id(msg), this_node.term);
+    printf("Acknowledging node %d is leader of term %d\n", get_msg_node_id(msg), this_node.term);
     pthread_mutex_lock(&election_status.mu);
     election_status.status = inactive; // TODO:
     pthread_cond_broadcast(&election_status.cond);
@@ -562,7 +562,7 @@ void *broadcast_election_msg(void *void_args)
 
     pthread_mutex_lock(&this_node.mu);
     pthread_mutex_lock(&election_status.mu);
-    while (args->term == this_node.term && election_status.status == in_progress)
+    while (args->term == this_node.term && election_status.status == in_progress && !this_node.end_coordination)
     {
         pthread_mutex_unlock(&election_status.mu);
         for (int i = 0; i < this_node.num_nodes; i++)
