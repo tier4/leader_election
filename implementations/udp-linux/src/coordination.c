@@ -50,7 +50,7 @@ recv_until() pthread routines
 */
 
 // Heartbeat timeout length
-#define HB_TIMEOUT_LEN 1000
+#define HB_TIMEOUT_LEN 5000 // 5 seconds for testing
 
 // Hardcoded paths (ORDERED BY PRIORITY)
 #define NUM_PATHS 4
@@ -233,7 +233,7 @@ int get_msg_connected_count(long msg)
         if ((link_info && 0b01) == 1)
             connected_count += 1;
     }
-    return connected_count;
+    return connected_count - 1; // subtract one to not include self
 }
 
 /* DATA HANDLERS */
@@ -392,6 +392,7 @@ void *handle_leader_msg(void *void_data) // TODO: deal with path_info
     pthread_mutex_unlock(&this_node.mu);
 
     printf("Acknowledging node %d is leader of term %d\n", get_msg_node_id(msg), this_node.term);
+    printf("New path = %d\n", get_msg_path_info(msg));
     pthread_mutex_lock(&election_status.mu);
     election_status.status = inactive; // TODO:
     pthread_cond_broadcast(&election_status.cond);
@@ -466,7 +467,7 @@ void *send_until(void *void_args)
         // printf("Sent data: %s\n", msg);
         struct timespec ts;
         ts.tv_sec = 0;
-        ts.tv_nsec = 250 * 1000 * 1000; // 250ms
+        ts.tv_nsec = 500 * 1000 * 1000; // 250ms
         nanosleep(&ts, NULL);
         pthread_mutex_lock(args->mutex);
     }
@@ -555,7 +556,7 @@ void *send_election_reply_msg(void *void_args)
         pthread_mutex_unlock(&this_node.mu);
         struct timespec ts;
         ts.tv_sec = 0;
-        ts.tv_nsec = 100 * 1000 * 1000; // 100ms TODO: adjustable
+        ts.tv_nsec = 500 * 1000 * 1000; // 100ms TODO: adjustable
         nanosleep(&ts, NULL);
         pthread_mutex_lock(&this_node.mu);
         pthread_mutex_lock(&election_status.mu);
@@ -590,7 +591,7 @@ void *broadcast_election_msg(void *void_args)
         pthread_mutex_unlock(&this_node.mu);
         struct timespec ts;
         ts.tv_sec = 0;
-        ts.tv_nsec = 100 * 1000 * 1000; // 100ms TODO: adjustable
+        ts.tv_nsec = 500 * 1000 * 1000; // 100ms TODO: adjustable
         nanosleep(&ts, NULL);
         pthread_mutex_lock(&this_node.mu);
         pthread_mutex_lock(&election_status.mu);
@@ -622,7 +623,7 @@ void *broadcast_leader_msg(void *void_args)
         pthread_mutex_unlock(&this_node.mu);
         struct timespec ts;
         ts.tv_sec = 0;
-        ts.tv_nsec = 100 * 1000 * 1000; // 100ms TODO: adjustable
+        ts.tv_nsec = 500 * 1000 * 1000; // 100ms TODO: adjustable
         nanosleep(&ts, NULL);
         pthread_mutex_lock(&this_node.mu);
     }
@@ -729,7 +730,10 @@ void *track_heartbeat_timers()
             }
         }
         pthread_mutex_unlock(&this_node.mu);
-        sleep(1); // TODO: check every 100ms, adjust this as needed
+        struct timespec ts;
+        ts.tv_sec = 0;
+        ts.tv_nsec = 100 * 1000 * 1000;
+        nanosleep(&ts, NULL); // check every 100ms
         pthread_mutex_lock(&this_node.mu);
     }
 
