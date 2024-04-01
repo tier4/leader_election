@@ -141,12 +141,15 @@ void sigint_handler()
 {
     printf("Handling SIGINT by ending coordination...\n");
     pthread_mutex_lock(&this_node.mu);
+    printf("SIGINT Handler: acquired this_node.mu...\n");
     this_node.end_coordination = 1;
     pthread_mutex_unlock(&this_node.mu);
 
+    printf("SIGINT Handler: acquired election_status.mu...\n");
     pthread_mutex_lock(&election_status.mu);
     pthread_cond_broadcast(&election_status.cond);
     pthread_mutex_unlock(&election_status.mu);
+    printf("Done handling SIGINT...\n");
 }
 
 /* UTILS */
@@ -546,6 +549,7 @@ void *send_election_reply_msg(void *void_args)
         pthread_mutex_lock(&this_node.mu);
         pthread_mutex_lock(&election_status.mu);
     }
+    pthread_mutex_unlock(&election_status.mu);
     pthread_mutex_unlock(&this_node.mu);
     free(args);
     pthread_exit(NULL);
@@ -580,6 +584,7 @@ void *broadcast_election_msg(void *void_args)
         pthread_mutex_lock(&this_node.mu);
         pthread_mutex_lock(&election_status.mu);
     }
+    pthread_mutex_unlock(&election_status.mu);
     pthread_mutex_unlock(&this_node.mu);
     pthread_exit(NULL);
 }
@@ -590,7 +595,7 @@ void *broadcast_leader_msg(void *void_args)
     struct send_args *args = (struct send_args *)void_args;
 
     pthread_mutex_lock(&this_node.mu);
-    while (args->term == this_node.term)
+    while (args->term == this_node.term && !this_node.end_coordination)
     {
         for (int i = 0; i < this_node.num_nodes; i++)
         {
@@ -681,10 +686,14 @@ void *trigger_election() // TODO: add raft-style leader election option
         {
             pthread_mutex_unlock(&this_node.mu);
             pthread_cond_wait(&election_status.cond, &election_status.mu);
+
+            // to avoid deadlock, reacquire locks in correct order (this_node.mu -> election_status.mu)
+            pthread_mutex_unlock(&election_status.mu);
             pthread_mutex_lock(&this_node.mu);
+            pthread_mutex_lock(&election_status.mu);
         }
-        pthread_mutex_unlock(&this_node.mu);
         pthread_mutex_unlock(&election_status.mu);
+        pthread_mutex_unlock(&this_node.mu);
         bully_election();
     }
 
@@ -761,7 +770,7 @@ int bully_election()
     printf("Starting broadcast of election msgs\n");
     struct send_args *args = (struct send_args *)malloc(sizeof(struct send_args));
     args->term = term;
-    thread_pool_assign_task(broadcast_election_msg, args); // TODO: args
+    thread_pool_assign_task(broadcast_election_msg, args);
 
     return 0;
 }
@@ -779,7 +788,11 @@ void *check_election_result()
             pthread_mutex_unlock(&this_node.mu);
             pthread_cond_wait(&election_status.cond, &election_status.mu);
             printf("Checking election result...\n");
+
+            // to avoid deadlock, reacquire locks in correct order (this_node.mu -> election_status.mu)
+            pthread_mutex_unlock(&election_status.mu);
             pthread_mutex_lock(&this_node.mu);
+            pthread_mutex_lock(&election_status.mu);
         }
         while (election_status.status == in_progress && !this_node.end_coordination)
         {
@@ -807,12 +820,16 @@ void *check_election_result()
                 pthread_mutex_unlock(&this_node.mu);
                 pthread_cond_wait(&election_status.cond, &election_status.mu);
                 printf("Checking election result...\n");
+
+                // to avoid deadlock, reacquire locks in correct order (this_node.mu -> election_status.mu)
+                pthread_mutex_unlock(&election_status.mu);
                 pthread_mutex_lock(&this_node.mu);
+                pthread_mutex_lock(&election_status.mu);
             }
         }
 
         pthread_mutex_unlock(&election_status.mu);
-
+        pthread_mutex_unlock(&this_node.mu);
         // printf("THREAD CHECKING ELECTION RESULT\n");
         // return while holding this_node.mu
     }
