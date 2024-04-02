@@ -179,13 +179,13 @@ int free_peer_info()
     return 0;
 }
 
-short get_link_info()
+short get_my_link_info()
 {
     short link_info = 0;
     for (int i = 0; i < this_node.num_nodes; i++)
     {
         if (this_node.peers[i].id == this_node.id)
-            link_info = link_info << 1;
+            link_info = (link_info << 1) + 1; // link info includes self as connected
         else if (this_node.peers[i].connected)
             link_info = (link_info << 1) + 1;
         else
@@ -224,13 +224,14 @@ short get_msg_link_info(long msg)
     return msg & 0xFF;
 }
 
-int get_msg_connected_count(long msg)
+int get_msg_connected_count(long msg) // 11 decimal to binary = 1011
 {
     unsigned short link_info = get_msg_link_info(msg);
     int connected_count;
     for (connected_count = 0; link_info != 0; link_info = link_info >> 1)
     {
-        if ((link_info && 0b01) == 1)
+        printf("link info = %d\n", link_info);
+        if ((link_info & 0b1) == 1)
             connected_count += 1;
     }
     return connected_count - 1; // subtract one to not include self
@@ -296,7 +297,7 @@ void *handle_election_msg(void *void_data)
     int node_id = get_msg_node_id(msg);
     int connected_count = get_msg_connected_count(msg);
 
-    printf("Handling election msg received from node %d\n term = %d, connected_count = %d\n", node_id, term, connected_count);
+    printf("Handling election msg received from node %d\n term = %d, connected_count = %d, link_info = %d\n", node_id, term, connected_count, get_msg_link_info(msg));
 
     pthread_mutex_lock(&this_node.mu);
 
@@ -304,7 +305,7 @@ void *handle_election_msg(void *void_data)
     {
         if (connected_count > this_node.connected_count || (connected_count == this_node.connected_count && node_id > this_node.id)) // give vote
         {
-            printf("Giving vote to node %d\n", node_id);
+            printf("Giving vote to node %d, for term %d\n", node_id, this_node.term);
             printf("My id = %d, term = %d, connected_count = %d\n", this_node.id, this_node.term, this_node.connected_count);
 
             // TODO: will the below strategy overload the network if tons of msgs from old terms are being sent? I think its okay
@@ -321,6 +322,7 @@ void *handle_election_msg(void *void_data)
     {
         printf("election_msg from node %d received with higher term than current term. Updating term and starting leader election...\n", node_id);
         this_node.term = term;
+        this_node.votes_received = 0;
         pthread_mutex_unlock(&this_node.mu);
 
         pthread_mutex_lock(&election_status.mu);
@@ -364,7 +366,7 @@ void *handle_election_reply(void *void_data)
     }
 
     // count vote
-    printf("Received vote from node %d\n", node_id);
+    printf("Received vote from node %d for term %d\n", node_id, term);
     printf("Now, votes_received = %d, connected_count = %d\n", this_node.votes_received + 1, this_node.connected_count);
     this_node.voted_peers[this_node.votes_received] = node_id;
     ++this_node.votes_received;
@@ -549,7 +551,7 @@ void *send_election_reply_msg(void *void_args)
         pthread_mutex_unlock(&election_status.mu);
 
         // send
-        long msg = encode_msg(election_reply_msg, this_node.id, args->term, get_link_info());
+        long msg = encode_msg(election_reply_msg, this_node.id, args->term, get_my_link_info());
         send_once(msg, args->peer);
 
         // sleep
@@ -574,7 +576,7 @@ void *send_leader_reply_msg(void *void_args) // TODO: send link info back to lea
     pthread_mutex_lock(&this_node.mu);
 
     // send
-    long msg = encode_msg(election_reply_msg, this_node.id, args->term, get_link_info());
+    long msg = encode_msg(election_reply_msg, this_node.id, args->term, get_my_link_info());
     send_once(msg, args->peer);
 
     pthread_mutex_unlock(&this_node.mu);
@@ -598,7 +600,7 @@ void *broadcast_election_msg(void *void_args)
                 continue;
 
             // send
-            long msg = encode_msg(election_msg, this_node.id, args->term, get_link_info());
+            long msg = encode_msg(election_msg, this_node.id, args->term, get_my_link_info());
             struct peer_info target = this_node.peers[i];
             send_once(msg, target);
         }
@@ -768,7 +770,8 @@ void *heartbeat_timeout_handler(void *void_args)
     printf("No heartbeat received from node %d! Starting leader election...\n", this_node.peers[peer_id].id);
     printf("Connected count is now %d\n", this_node.connected_count);
 
-    this_node.term++;                  // TODO: add mod M for wrap around
+    this_node.term++; // TODO: add mod M for wrap around
+    this_node.votes_received = 0;
     election_status.status = starting; // to trigger election start
 
     pthread_cond_broadcast(&election_status.cond);
@@ -781,7 +784,7 @@ void *heartbeat_timeout_handler(void *void_args)
 int bully_election()
 {
     pthread_mutex_lock(&this_node.mu);
-    this_node.votes_received = 0;
+    // this_node.votes_received = 0; moved to where term is changed
     int term = this_node.term;
     pthread_mutex_unlock(&this_node.mu);
 
@@ -790,7 +793,7 @@ int bully_election()
     pthread_cond_broadcast(&election_status.cond);
     pthread_mutex_unlock(&election_status.mu);
 
-    printf("Starting broadcast of election msgs\n");
+    printf("Starting broadcast of election msgs (term %d)\n", term);
     struct send_args *args = (struct send_args *)malloc(sizeof(struct send_args));
     args->term = term;
     thread_pool_assign_task(broadcast_election_msg, args);

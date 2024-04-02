@@ -101,7 +101,7 @@ void sigint_handler();
 double get_elapsed_time_ms(struct timeval start);
 int free_peer_info();
 long encode_msg(unsigned short type, unsigned short node_id, unsigned short term, unsigned short path_or_link_info);
-short get_link_info();
+short get_my_link_info();
 short get_msg_type(long msg);
 short get_msg_node_id(long msg);
 short get_msg_term(long msg);
