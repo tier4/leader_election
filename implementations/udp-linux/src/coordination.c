@@ -230,7 +230,6 @@ int get_msg_connected_count(long msg) // 11 decimal to binary = 1011
     int connected_count;
     for (connected_count = 0; link_info != 0; link_info = link_info >> 1)
     {
-        printf("link info = %d\n", link_info);
         if ((link_info & 0b1) == 1)
             connected_count += 1;
     }
@@ -896,20 +895,27 @@ short get_best_path() // use global paths[] (ordered by priority, hardcoded valu
 
 int path_is_valid(struct path p) // path should be pair of node ids
 {
-    // make sure both nodes believe they are connected to each other
-    return (connected(p.node1, p.node2) && connected(p.node2, p.node1));
-}
-
-int connected(int node1, int node2) // check that node1 sees node2
-{
     pthread_mutex_lock(&this_node.mu);
 
-    short link_info1 = this_node.peers[node1].link_info;
+    printf("Checking validity of path (node_%d, node_%d)\n", p.node1, p.node2);
+    // printf("this_node.peers[p.node1].connected = %d\n", this_node.peers[p.node1].connected);
+    // printf("this_node.peers[p.node2].connected = %d\n", this_node.peers[p.node2].connected);
 
-    int offset = (this_node.num_nodes - 1) - node2; // e.g. num_nodes = 3, node2 = 1, offset = 1
+    // "Note that if the leader cannot recieve any information from a node,
+    // then the leader acts as if it recieved all-False array"
+    // this makes sure I'm not using out of date information
+    if (!this_node.peers[p.node1].connected || !this_node.peers[p.node2].connected)
+    {
+        pthread_mutex_unlock(&this_node.mu);
+        return 0;
+    }
+
+    // make sure both nodes believe they are connected to each other
+    short link_info1 = this_node.peers[p.node1].link_info;
+
+    int offset = (this_node.num_nodes - 1) - p.node2; // e.g. num_nodes = 3, node2 = 1, offset = 1
 
     pthread_mutex_unlock(&this_node.mu);
-
     return (link_info1 >> offset) && 0x01;
 }
 

@@ -140,4 +140,3 @@ void *check_election_result();
 short path_struct_to_short(struct path p);
 short get_best_path();
 int path_is_valid(struct path p);
-int connected(int node1, int node2);
