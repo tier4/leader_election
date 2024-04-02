@@ -377,7 +377,7 @@ void *handle_election_reply(void *void_data)
     pthread_exit(NULL);
 }
 
-void *handle_leader_msg(void *void_data) // TODO: deal with path_info
+void *handle_leader_msg(void *void_data) // TODO: reply with link info if path_info is empty
 {
     printf("Received leader message...\n");
 
@@ -567,6 +567,21 @@ void *send_election_reply_msg(void *void_args)
     pthread_exit(NULL);
 }
 
+void *send_leader_reply_msg(void *void_args) // TODO: send link info back to leader
+{
+    struct send_args *args = (struct send_args *)void_args;
+
+    pthread_mutex_lock(&this_node.mu);
+
+    // send
+    long msg = encode_msg(election_reply_msg, this_node.id, args->term, get_link_info());
+    send_once(msg, args->peer);
+
+    pthread_mutex_unlock(&this_node.mu);
+    free(args);
+    pthread_exit(NULL);
+}
+
 void *broadcast_election_msg(void *void_args)
 {
     // args: (int term)
@@ -749,19 +764,12 @@ void *heartbeat_timeout_handler(void *void_args)
     pthread_mutex_lock(&this_node.mu);
 
     pthread_mutex_lock(&election_status.mu);
-    if (election_status.status == inactive) // not yet in election
-    {
-        printf("No heartbeat received from node %d! Starting leader election...\n", this_node.peers[peer_id].id);
-        printf("Connected count is now %d\n", this_node.connected_count);
 
-        this_node.term++;                  // TODO: add mod M for wrap around
-        election_status.status = starting; // to trigger election start
-    }
-    else // already in election, but timeout might trigger leader to be chosen
-    {
-        printf("No heartbeat received from node %d! Already in leader election...\n", this_node.peers[peer_id].id);
-        printf("Connected count is now %d\n", this_node.connected_count);
-    }
+    printf("No heartbeat received from node %d! Starting leader election...\n", this_node.peers[peer_id].id);
+    printf("Connected count is now %d\n", this_node.connected_count);
+
+    this_node.term++;                  // TODO: add mod M for wrap around
+    election_status.status = starting; // to trigger election start
 
     pthread_cond_broadcast(&election_status.cond);
     pthread_mutex_unlock(&election_status.mu);
