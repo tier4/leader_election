@@ -100,8 +100,8 @@ void sigint_handler();
 /* UTILS*/
 double get_elapsed_time_ms(struct timeval start);
 int free_peer_info();
-long encode_msg(unsigned short type, unsigned short node_id, unsigned short term, unsigned short path_or_link_info);
 short get_my_link_info();
+long encode_msg(unsigned short type, unsigned short node_id, unsigned short term, unsigned short path_or_link_info);
 short get_msg_type(long msg);
 short get_msg_node_id(long msg);
 short get_msg_term(long msg);
@@ -119,9 +119,9 @@ void *handle_leader_msg(void *void_data);
 /* NETWORK FUNCTIONS */
 int prepare_address_info(char *address, char *port, struct peer_info *peer);
 int prepare_socket(struct peer_info *peer);
-void *send_until(void *void_args);
+int send_once(long msg, struct peer_info target);
+void *send_heartbeat(void *void_args);
 void *recv_until(void *void_args);
-int broadcast_until(long msg, int *condition, pthread_mutex_t *mu);
 int broadcast_heartbeat();
 void *send_election_reply_msg(void *void_args);
 void *broadcast_election_msg(void *void_args);
