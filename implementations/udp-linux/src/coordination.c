@@ -67,12 +67,10 @@ int thread_pool_resize() // double size of thread pool
 
     memcpy(new_threads, tpool.threads, sizeof(pthread_t) * tpool.total_count);
 
-    pthread_t *threads_tmp = tpool.threads; // pointer to old thread memory
+    free(tpool.threads);
 
     tpool.total_count = new_count;
     tpool.threads = new_threads;
-
-    free(threads_tmp); // free old thread memory
 
     return 0;
 }
@@ -358,14 +356,12 @@ void *handle_leader_msg(void *void_data)
         pthread_mutex_unlock(&this_node.mu);
         pthread_exit(NULL);
     }
-    pthread_mutex_unlock(&this_node.mu);
 
     // else, acknowledge leader, announce election is over
     printf("Acknowledging node %d is leader of term %d\n", get_msg_node_id(msg), this_node.term);
     printf("New path = %d\n", get_msg_path_info(msg));
 
     // keep track of leader
-    pthread_mutex_lock(&this_node.mu);
     this_node.leader_id = get_msg_node_id(msg);
     pthread_mutex_unlock(&this_node.mu);
 
@@ -885,7 +881,7 @@ short path_struct_to_short(struct path p) // helper function to encode path info
     pthread_mutex_lock(&this_node.mu);
 
     short res = 0;
-    for (int i = 0; i < this_node.num_nodes; i++) // TODO: get mutex
+    for (int i = 0; i < this_node.num_nodes; i++)
     {
         if (i == p.node1 || i == p.node2)
             res = (res << 1) + 1;
@@ -983,12 +979,12 @@ int main(int argc, char **argv)
     struct peer_info peers[num_nodes];
     for (int i = 0; i < num_nodes; i++)
     {
-        char *address = (char *)malloc(16);
-        char *port = (char *)malloc(16);
+        char address[16];
+        char port[16];
 
-        if (fscanf(node_info_file, "%d %15s %15s", &peers[i].id, address, port) == EOF)
+        if ((fscanf(node_info_file, "%d %15s %15s", &peers[i].id, address, port)) != 3)
         {
-            fprintf(stderr, "Error: unexpected end of file\n");
+            fprintf(stderr, "Error reading node info file\n");
             fclose(node_info_file);
             exit(1);
         }
@@ -998,9 +994,6 @@ int main(int argc, char **argv)
 
         peers[i].connected = 1;
         peers[i].link_info = 0;
-
-        free(address);
-        free(port);
     }
 
     fclose(node_info_file);
