@@ -32,6 +32,7 @@ struct peer_info
     int socket;
     int connected;
     unsigned short link_info;
+    int heartbeat_exchanged; // check if initial heartbeat has been exchanged
 };
 struct coordination_node
 {
@@ -133,9 +134,9 @@ int coordination();
 int begin_heartbeat_timers();
 int begin_heartbeats();
 int begin_listening();
-void *begin_election();
 void *track_heartbeat_timers();
 void *heartbeat_timeout_handler(void *void_args);
+void *begin_election();
 short path_struct_to_short(struct path p);
 short get_best_path();
 int path_is_valid(struct path p);

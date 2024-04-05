@@ -204,16 +204,19 @@ int get_msg_connected_count(long msg)
 int handle_data(long msg) // finds which handler function to call and spins-off thread calling that function
 {
     int type = get_msg_type(msg);
-
     switch (type)
     {
     case heartbeat_msg:
+        printf("Handling heartbeat message\n");
         return handle_heartbeat(msg);
     case election_msg:
+        printf("Handling election message\n");
         return handle_election_msg(msg);
     case election_reply_msg:
+        printf("Handling election reply message\n");
         return handle_election_reply(msg);
     case leader_msg:
+        printf("Handling leader message\n");
         return handle_leader_msg(msg);
     }
 
@@ -225,8 +228,11 @@ int handle_heartbeat(long msg)
 {
     int sender_id = get_msg_node_id(msg);
 
-    // reset heartbeat timeout
+    printf("Handling heartbeat!\n");
+    // set initial heartbeat exchanged value = true and reset heartbeat timeout
     pthread_mutex_lock(&this_node.mu);
+    printf("heartbeat handler acquired lock...\n");
+    this_node.peers[sender_id].heartbeat_exchanged = 1;
     gettimeofday(&this_node.peers[sender_id].timeout_start, NULL);
     pthread_mutex_unlock(&this_node.mu);
 
@@ -411,6 +417,7 @@ int send_once(long msg, struct peer_info target) // helper function for msg send
 
 void *send_heartbeat(void *void_args) // helper function for heartbeats
 {
+    printf("in send_heartbeat() function\n");
     // get args: (long msg, struct peer_info target, int *condition, pthread_mutex_t *mu)
     struct send_args *args = void_args;
     while (1)
@@ -423,6 +430,8 @@ void *send_heartbeat(void *void_args) // helper function for heartbeats
             break;
         }
         pthread_mutex_unlock(args->mutex);
+
+        printf("sending heartbeat\n");
 
         // send data
         int bytes_sent;
@@ -630,15 +639,19 @@ void *broadcast_leader_msg(void *void_args)
 /* COORDINATION FUNCTIONS */
 int coordination()
 {
-
+    printf("setting initial heartbeat timers\n");
     // being heartbeat timers and spinoff thread tracking heartbeat timers
     begin_heartbeat_timers();
 
+    printf("beginning sending heartbeats\n");
     // for each other node, spinoff thread sending periodic heartbeats
     begin_heartbeats();
 
+    printf("beginning listening\n");
     // start thread listening for communication from other nodes
     begin_listening();
+
+    printf("coordination started successfully\n");
 
     return 0;
 }
@@ -683,8 +696,40 @@ int begin_listening() // listen for messages until coordination ends
 
 void *track_heartbeat_timers()
 {
-    sleep(5); // TODO: change this to hold until exchange heartbeats with everyone, currently give 5 seconds for everyone to get up and running
 
+    // don't start tracking timers until exchanged heartbeats with all peers
+    int all_heartbeats_exchanged = 0;
+    while (!all_heartbeats_exchanged)
+    {
+        // sleep for a bit waiting for heartbeats to be exchanges
+        struct timespec ts;
+        ts.tv_sec = 0;
+        ts.tv_nsec = 250 * 1000 * 1000; // 250ms
+        nanosleep(&ts, NULL);
+
+        // first make sure coordination hasn't ended
+        pthread_mutex_lock(&this_node.mu);
+        if (this_node.end_coordination)
+        {
+            pthread_mutex_unlock(&this_node.mu);
+            break;
+        }
+
+        // loop through nodes, if any haven't exchanged heartbeats, sleep and repeat check
+        for (int i = 0; i < this_node.num_nodes; i++)
+        {
+            all_heartbeats_exchanged = 1;
+            if (i != this_node.id && !this_node.peers[i].heartbeat_exchanged)
+            {
+                all_heartbeats_exchanged = 0; // repeat outer while
+                break;
+            }
+        }
+
+        pthread_mutex_unlock(&this_node.mu);
+    }
+
+    // start checking timers
     pthread_mutex_lock(&this_node.mu);
 
     // loop through peers, checking if time elapsed > heartbeat timeout length
