@@ -207,16 +207,16 @@ int handle_data(long msg) // finds which handler function to call and spins-off 
     switch (type)
     {
     case heartbeat_msg:
-        printf("Handling heartbeat message\n");
+        // printf("Handling heartbeat message\n");
         return handle_heartbeat(msg);
     case election_msg:
-        printf("Handling election message\n");
+        // printf("Handling election message\n");
         return handle_election_msg(msg);
     case election_reply_msg:
-        printf("Handling election reply message\n");
+        // printf("Handling election reply message\n");
         return handle_election_reply(msg);
     case leader_msg:
-        printf("Handling leader message\n");
+        // printf("Handling leader message\n");
         return handle_leader_msg(msg);
     }
 
@@ -228,10 +228,8 @@ int handle_heartbeat(long msg)
 {
     int sender_id = get_msg_node_id(msg);
 
-    printf("Handling heartbeat!\n");
     // set initial heartbeat exchanged value = true and reset heartbeat timeout
     pthread_mutex_lock(&this_node.mu);
-    printf("heartbeat handler acquired lock...\n");
     this_node.peers[sender_id].heartbeat_exchanged = 1;
     gettimeofday(&this_node.peers[sender_id].timeout_start, NULL);
     pthread_mutex_unlock(&this_node.mu);
@@ -257,10 +255,10 @@ int handle_election_msg(long msg)
         this_node.term = term;
         this_node.votes_received = 0;
 
-        pthread_mutex_unlock(&this_node.mu);
-
         // start election
-        thread_pool_assign_task(begin_election, NULL);
+        pthread_mutex_unlock(&this_node.mu);
+        begin_election();
+        pthread_mutex_lock(&this_node.mu);
     }
     if (term == this_node.term)
     {
@@ -276,9 +274,10 @@ int handle_election_msg(long msg)
             thread_pool_assign_task(send_election_reply_msg, reply_args);
         }
         // else don't give vote (ignore msg)
-        pthread_mutex_unlock(&this_node.mu);
     }
     // else received msg term is old, can ignore the msg
+
+    pthread_mutex_unlock(&this_node.mu);
 
     return 0;
 }
@@ -294,7 +293,7 @@ int handle_election_reply(long msg)
     if (term != this_node.term)
     {
         pthread_mutex_unlock(&this_node.mu);
-        pthread_exit(NULL);
+        return 0;
     }
 
     // update link info of peer
@@ -306,7 +305,7 @@ int handle_election_reply(long msg)
         if (node_id == this_node.voted_peers[i]) // already received this vote, ignore
         {
             pthread_mutex_unlock(&this_node.mu);
-            pthread_exit(NULL);
+            return 0;
         }
     }
 
@@ -417,21 +416,18 @@ int send_once(long msg, struct peer_info target) // helper function for msg send
 
 void *send_heartbeat(void *void_args) // helper function for heartbeats
 {
-    printf("in send_heartbeat() function\n");
     // get args: (long msg, struct peer_info target, int *condition, pthread_mutex_t *mu)
     struct send_args *args = void_args;
     while (1)
     {
         // check condition
         pthread_mutex_lock(args->mutex);
-        if (!*args->condition)
+        if (*args->condition)
         {
             pthread_mutex_unlock(args->mutex);
             break;
         }
         pthread_mutex_unlock(args->mutex);
-
-        printf("sending heartbeat\n");
 
         // send data
         int bytes_sent;
@@ -486,7 +482,7 @@ void *recv_until(void *void_args) // for listening for messages
     {
         // check condition
         pthread_mutex_lock(args->mutex);
-        if (!*args->condition)
+        if (*args->condition)
         {
             pthread_mutex_unlock(args->mutex);
             break;
@@ -729,6 +725,8 @@ void *track_heartbeat_timers()
         pthread_mutex_unlock(&this_node.mu);
     }
 
+    printf("All heartbeats exchanged. Starting heartbeat timers...\n");
+
     // start checking timers
     pthread_mutex_lock(&this_node.mu);
 
@@ -785,7 +783,7 @@ void *heartbeat_timeout_handler(void *void_args)
     return 0;
 }
 
-void *begin_election()
+int begin_election()
 {
     // get term
     pthread_mutex_lock(&this_node.mu);
@@ -801,13 +799,11 @@ void *begin_election()
 
     thread_pool_assign_task(broadcast_election_msg, args);
 
-    pthread_exit(NULL);
+    return 0;
 }
 
 short path_struct_to_short(struct path p) // helper function to encode path information
 {
-    pthread_mutex_lock(&this_node.mu);
-
     short res = 0;
     for (int i = 0; i < this_node.num_nodes; i++)
     {
@@ -816,8 +812,6 @@ short path_struct_to_short(struct path p) // helper function to encode path info
         else
             res = res << 1;
     }
-
-    pthread_mutex_unlock(&this_node.mu);
 
     return res;
 }
@@ -837,8 +831,6 @@ short get_best_path() // use global paths[] (ordered by priority, hardcoded valu
 
 int path_is_valid(struct path p) // path should be pair of node ids
 {
-    pthread_mutex_lock(&this_node.mu);
-
     printf("Checking validity of path (node_%d, node_%d)\n", p.node1, p.node2);
 
     // "Note that if the leader cannot recieve any information from a node,
@@ -846,7 +838,6 @@ int path_is_valid(struct path p) // path should be pair of node ids
     // this makes sure I'm not using out of date information
     if (!this_node.peers[p.node1].connected || !this_node.peers[p.node2].connected)
     {
-        pthread_mutex_unlock(&this_node.mu);
         return 0;
     }
 
@@ -855,7 +846,6 @@ int path_is_valid(struct path p) // path should be pair of node ids
 
     int offset = (this_node.num_nodes - 1) - p.node2; // e.g. num_nodes = 3, node2 = 1, offset = 1
 
-    pthread_mutex_unlock(&this_node.mu);
     return (link_info1 >> offset) && 0x01;
 }
 
@@ -922,6 +912,7 @@ int main(int argc, char **argv)
 
         peers[i].connected = 1;
         peers[i].link_info = 0;
+        peers[i].heartbeat_exchanged = 0;
     }
 
     fclose(node_info_file);

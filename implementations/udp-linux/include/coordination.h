@@ -136,7 +136,7 @@ int begin_heartbeats();
 int begin_listening();
 void *track_heartbeat_timers();
 void *heartbeat_timeout_handler(void *void_args);
-void *begin_election();
+int begin_election();
 short path_struct_to_short(struct path p);
 short get_best_path();
 int path_is_valid(struct path p);
