@@ -560,12 +560,11 @@ void *broadcast_election_msg(void *void_args)
             long msg = encode_msg(election_msg, this_node.id, args->term, get_my_link_info());
             struct peer_info target = this_node.peers[i];
 
-            pthread_mutex_unlock(&this_node.mu);
-
             send_once(msg, target);
         }
 
         // sleep
+        pthread_mutex_unlock(&this_node.mu);
         struct timespec ts;
         ts.tv_sec = 0;
         ts.tv_nsec = 500 * 1000 * 1000; // 500ms TODO: adjustable
@@ -600,12 +599,11 @@ void *broadcast_leader_msg(void *void_args)
             long msg = encode_msg(leader_msg, this_node.id, args->term, args->path_info);
             struct peer_info target = this_node.peers[i];
 
-            pthread_mutex_unlock(&this_node.mu);
-
             send_once(msg, target);
         }
 
         // sleep
+        pthread_mutex_unlock(&this_node.mu);
         struct timespec ts;
         ts.tv_sec = 0;
         ts.tv_nsec = 500 * 1000 * 1000; // 500ms TODO: adjustable
