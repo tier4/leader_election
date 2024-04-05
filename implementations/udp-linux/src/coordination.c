@@ -95,23 +95,6 @@ pthread_t *get_thread()
     return ret_thread;
 }
 
-pthread_t *get_threads(int count)
-{
-    pthread_mutex_lock(&tpool.mu);
-
-    // if out of threads, make pool bigger
-    while (tpool.total_count - tpool.num_allocated < count)
-    {
-        thread_pool_resize();
-    }
-
-    pthread_t *ret_threads = &tpool.threads[tpool.num_allocated];
-    tpool.num_allocated += count;
-
-    pthread_mutex_unlock(&tpool.mu);
-    return ret_threads;
-}
-
 /* SIGNAL HANDLER */
 void sigint_handler() // this allows program to finish cleanly on CTRL-C press
 {
@@ -591,6 +574,8 @@ void *broadcast_election_msg(void *void_args)
         pthread_mutex_lock(&this_node.mu);
     }
 
+    free(args);
+
     pthread_mutex_unlock(&this_node.mu);
 
     pthread_exit(NULL);
@@ -628,6 +613,9 @@ void *broadcast_leader_msg(void *void_args)
 
         pthread_mutex_lock(&this_node.mu);
     }
+
+    free(args);
+
     pthread_mutex_unlock(&this_node.mu);
     pthread_exit(NULL);
 }

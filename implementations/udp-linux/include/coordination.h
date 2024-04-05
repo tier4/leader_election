@@ -10,7 +10,6 @@
 #include <sys/time.h>
 
 /* STRUCTS */
-
 struct path
 {
     int node1;
@@ -66,13 +65,6 @@ struct recv_args
     pthread_mutex_t *mutex;
 };
 
-struct condition_variable
-{
-    int status;
-    pthread_cond_t cond;
-    pthread_mutex_t mu;
-};
-
 enum msg_type
 {
     heartbeat_msg,
@@ -84,7 +76,6 @@ enum msg_type
 enum election_statuses
 {
     inactive,    // not started or finished
-    starting,    // about to start
     in_progress, // in progress
 };
 
@@ -94,7 +85,6 @@ int thread_pool_destroy();
 int thread_pool_resize();
 int thread_pool_assign_task(void *func, void *args);
 pthread_t *get_thread();
-pthread_t *get_threads(int count);
 
 /* SIGNAL HANDLER */
 void sigint_handler();
