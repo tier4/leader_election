@@ -358,7 +358,7 @@ int handle_leader_msg(long msg)
 }
 
 /* NETWORK FUNCTIONS */
-int prepare_address_info(char *address, char *port, struct addrinfo *ai)
+int prepare_address_info(char *address, char *port, struct addrinfo **res)
 {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
@@ -366,7 +366,7 @@ int prepare_address_info(char *address, char *port, struct addrinfo *ai)
     hints.ai_socktype = SOCK_DGRAM;
     int status;
 
-    if ((status = getaddrinfo(address, port, &hints, &ai)))
+    if ((status = getaddrinfo(address, port, &hints, res)))
     {
         fprintf(stderr, "Error with getting address info, status = %s\n", gai_strerror(status));
         return -1;
@@ -912,8 +912,8 @@ int main(int argc, char **argv)
             exit(1);
         }
 
-        prepare_address_info(send_addr, port, peers[i].send_addrinfo);
-        prepare_address_info(listen_addr, port, peers[i].listen_addrinfo);
+        prepare_address_info(send_addr, port, &peers[i].send_addrinfo);
+        prepare_address_info(listen_addr, port, &peers[i].listen_addrinfo);
         peers[i].send_socket = get_socket(peers[i].send_addrinfo, 1);
         peers[i].listen_socket = get_socket(peers[i].listen_addrinfo, 0);
 
