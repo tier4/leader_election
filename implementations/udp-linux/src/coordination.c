@@ -373,14 +373,21 @@ int prepare_address_info(char *address, char *port, struct peer_info *peer)
     return 0;
 }
 
-int prepare_socket(struct peer_info *peer)
+int prepare_socket(struct peer_info *peer, int send_socket)
 {
     struct addrinfo *address_info = peer->address_info;
-    if ((peer->socket = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol)) == -1)
+
+    if (send_socket)
+        peer->socket = socket(address_info->ai_family, address_info->ai_socktype | SOCK_NONBLOCK, address_info->ai_protocol);
+    // else
+    peer->socket = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol);
+
+    if (peer->socket == -1)
     {
         fprintf(stderr, "Error creating socket\n");
         return -1;
     }
+
     return 0;
 }
 
@@ -871,6 +878,9 @@ int main(int argc, char **argv)
     ...
     */
 
+    // get this process's node id from command line args
+    int my_id = strtol(argv[3], NULL, 10);
+
     // open info file
     FILE *node_info_file;
     if ((node_info_file = fopen(argv[2], "r")) == NULL)
@@ -885,6 +895,7 @@ int main(int argc, char **argv)
     {
         char address[16];
         char port[16];
+        int send_socket = 1; // for socket options
 
         if ((fscanf(node_info_file, "%d %15s %15s", &peers[i].id, address, port)) != 3)
         {
@@ -893,8 +904,11 @@ int main(int argc, char **argv)
             exit(1);
         }
 
+        if (i == my_id) // receive socket
+            send_socket = 0;
+
         prepare_address_info(address, port, &peers[i]);
-        prepare_socket(&peers[i]);
+        prepare_socket(&peers[i], send_socket);
 
         peers[i].connected = 1;
         peers[i].link_info = 0;
@@ -907,9 +921,6 @@ int main(int argc, char **argv)
     pthread_mutex_init(&this_node.mu, NULL);
     this_node.peers = peers;
     this_node.num_nodes = num_nodes;
-
-    // get this process's node id from command line args
-    int my_id = strtol(argv[3], NULL, 10);
     this_node.id = my_id;
 
     // set term = 0, connected_count = num_nodes - 1, no disconnected nodes, path accordingly
