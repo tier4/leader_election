@@ -212,6 +212,8 @@ int handle_heartbeat(long msg)
 {
     int sender_id = get_msg_node_id(msg);
 
+    printf("Received heartbeat from node %d\n", sender_id);
+
     // set initial heartbeat exchanged value = true and reset heartbeat timeout
     pthread_mutex_lock(&this_node.mu);
     this_node.peers[sender_id].heartbeat_exchanged = 1;
