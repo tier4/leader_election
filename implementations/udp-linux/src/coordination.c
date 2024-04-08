@@ -391,12 +391,10 @@ int prepare_socket(struct peer_info *peer, int send_socket)
     return 0;
 }
 
-int send_once(long msg, struct peer_info target) // helper function for msg sending
+int send_once(long msg, struct addrinfo *addrinfo, int sock) // helper function for msg sending
 {
     int bytes_sent;
-    struct addrinfo *address_info = target.address_info;
-
-    if ((bytes_sent = sendto(target.socket, &msg, sizeof(long), 0, address_info->ai_addr, address_info->ai_addrlen)) == -1)
+    if ((bytes_sent = sendto(sock, &msg, sizeof(long), 0, addrinfo->ai_addr, addrinfo->ai_addrlen)) == -1)
     {
         fprintf(stderr, "Error with sending data\n");
         return -1;
@@ -531,7 +529,7 @@ void *send_election_reply_msg(void *void_args)
 
         pthread_mutex_unlock(&this_node.mu);
 
-        send_once(msg, args->peer);
+        send_once(msg, args->peer.address_info, args->peer.socket);
 
         // sleep
         struct timespec ts;
@@ -565,9 +563,10 @@ void *broadcast_election_msg(void *void_args)
 
             // send
             long msg = encode_msg(election_msg, this_node.id, args->term, get_my_link_info());
-            struct peer_info target = this_node.peers[i];
 
-            send_once(msg, target);
+            pthread_mutex_unlock(&this_node.mu);
+            send_once(msg, this_node.peers[i].address_info, this_node.peers[i].socket);
+            pthread_mutex_lock(&this_node.mu);
         }
 
         // sleep
@@ -604,9 +603,10 @@ void *broadcast_leader_msg(void *void_args)
 
             // send
             long msg = encode_msg(leader_msg, this_node.id, args->term, args->path_info);
-            struct peer_info target = this_node.peers[i];
 
-            send_once(msg, target);
+            pthread_mutex_unlock(&this_node.mu);
+            send_once(msg, this_node.peers[i].address_info, this_node.peers[i].socket);
+            pthread_mutex_lock(&this_node.mu);
         }
 
         // sleep
