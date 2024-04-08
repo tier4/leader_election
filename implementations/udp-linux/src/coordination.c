@@ -245,7 +245,7 @@ int handle_election_msg(long msg)
     }
     if (term == this_node.term)
     {
-        if (connected_count > this_node.connected_count || (connected_count == this_node.connected_count && node_id > this_node.id)) // give vote
+        if (connected_count > this_node.connected_count || (connected_count == this_node.connected_count && node_id < this_node.id)) // give vote
         {
             printf("Giving vote to node %d, for term %d\n", node_id, this_node.term);
             printf("My id = %d, term = %d, connected_count = %d\n", this_node.id, this_node.term, this_node.connected_count);
