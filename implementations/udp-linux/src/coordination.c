@@ -374,20 +374,21 @@ int prepare_address_info(char *address, char *port, struct addrinfo *ai)
     return 0;
 }
 
-int prepare_socket(struct addrinfo *address_info, int *socket_ref, int send_socket)
+int get_socket(struct addrinfo *address_info, int send_socket)
 {
+    int sock;
     if (send_socket)
-        *socket_ref = socket(address_info->ai_family, address_info->ai_socktype | SOCK_NONBLOCK, address_info->ai_protocol);
+        sock = socket(address_info->ai_family, address_info->ai_socktype | SOCK_NONBLOCK, address_info->ai_protocol);
     // else
-    *socket_ref = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol);
+    sock = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol);
 
-    if (*socket_ref == -1)
+    if (sock == -1)
     {
         fprintf(stderr, "Error creating socket\n");
         return -1;
     }
 
-    return 0;
+    return sock;
 }
 
 int send_once(long msg, struct addrinfo *addrinfo, int sock) // helper function for msg sending
@@ -868,9 +869,9 @@ int main(int argc, char **argv)
     }
 
     // argv should be [number_of_nodes, node_info_file, my_node_id]
-    if (argc != 5)
+    if (argc != 4)
     {
-        fprintf(stderr, "Error: expected 4 command line arguments (number of nodes, node info file, my node id), found: %d\n", argc - 1);
+        fprintf(stderr, "Error: expected 3 command line arguments (number of nodes, node info file, my node id), found: %d\n", argc - 1);
         exit(1);
     }
 
@@ -904,7 +905,7 @@ int main(int argc, char **argv)
         char listen_addr[16];
         char port[16];
 
-        if ((fscanf(node_info_file, "%d %15s %15s %15s", &peers[i].id, send_addr, listen_addr, port)) != 3)
+        if ((fscanf(node_info_file, "%d %15s %15s %15s", &peers[i].id, send_addr, listen_addr, port)) != 4)
         {
             fprintf(stderr, "Error reading node info file\n");
             fclose(node_info_file);
@@ -913,8 +914,8 @@ int main(int argc, char **argv)
 
         prepare_address_info(send_addr, port, peers[i].send_addrinfo);
         prepare_address_info(listen_addr, port, peers[i].listen_addrinfo);
-        prepare_socket(peers[i].send_addrinfo, &peers[i].send_socket, 1);
-        prepare_socket(peers[i].listen_addrinfo, &peers[i].listen_socket, 0);
+        peers[i].send_socket = get_socket(peers[i].send_addrinfo, 1);
+        peers[i].listen_socket = get_socket(peers[i].listen_addrinfo, 0);
 
         peers[i].connected = 1;
         peers[i].link_info = 0;
