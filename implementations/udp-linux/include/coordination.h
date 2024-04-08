@@ -27,8 +27,10 @@ struct peer_info
 {
     int id;
     struct timeval timeout_start;
-    struct addrinfo *address_info;
-    int socket;
+    struct addrinfo *send_addrinfo;
+    struct addrinfo *listen_addrinfo;
+    int send_socket;
+    int listen_socket;
     int connected;
     unsigned short link_info;
     int heartbeat_exchanged; // check if initial heartbeat has been exchanged
@@ -37,6 +39,7 @@ struct coordination_node
 {
     int id;
     int num_nodes;
+
     struct peer_info *peers;
     pthread_mutex_t mu;
     int end_coordination;
@@ -109,8 +112,8 @@ int handle_election_reply(long msg);
 int handle_leader_msg(long msg);
 
 /* NETWORK FUNCTIONS */
-int prepare_address_info(char *address, char *port, struct peer_info *peer);
-int prepare_socket(struct peer_info *peer, int send_socket);
+int prepare_address_info(char *address, char *port, struct addrinfo *ai);
+int prepare_socket(struct addrinfo *address_info, int *socket_ref, int send_socket);
 int send_once(long msg, struct addrinfo *addrinfo, int sock);
 void *send_heartbeat(void *void_args);
 void *recv_until(void *void_args);
