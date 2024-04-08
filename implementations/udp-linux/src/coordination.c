@@ -681,7 +681,7 @@ int begin_listening() // listen for messages until coordination ends
 
         struct recv_args *args = (struct recv_args *)malloc(sizeof(struct recv_args));
 
-        args->peer = this_node.peers[this_node.id];
+        args->peer = this_node.peers[i];
         args->condition = &this_node.end_coordination;
         args->mutex = &this_node.mu;
 
