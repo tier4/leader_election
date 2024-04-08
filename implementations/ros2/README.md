@@ -1,24 +1,22 @@
-# leader_election
-
-## prototype
+## ROS 2 implementation
 
 ### build
 ```
 $ source /opt/ros/humble/setup.bash
-$ cd demo
+$ cd implementations/ros2
 $ colcon build
 ```
 
 ### run
 ```
-$ cd demo
+$ cd implementations/ros2
 $ source install/setup.bash
 $ ros2 launch launch/leader_election.xml
 ```
 
 ### node crash
 ```
-$ cd demo
+$ cd implementations/ros2
 # in terminal1
 $ source install/setup.bash
 $ ros2 launch launch/leader_election.xml
@@ -30,7 +28,7 @@ $ ros2 topic pub --once /{ecu_name}/shutdown std_msgs/msg/Empty {}
 
 ### link crash
 ```
-$ cd demo
+$ cd implementations/ros2
 # in terminal1
 $ source install/setup.bash
 $ ros2 launch launch/leader_election.xml
