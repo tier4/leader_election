@@ -381,8 +381,8 @@ int get_socket(struct addrinfo *address_info, int send_socket)
     int sock;
     if (send_socket)
         sock = socket(address_info->ai_family, address_info->ai_socktype | SOCK_NONBLOCK, address_info->ai_protocol);
-    // else
-    sock = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol);
+    else
+        sock = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol);
 
     if (sock == -1)
     {
