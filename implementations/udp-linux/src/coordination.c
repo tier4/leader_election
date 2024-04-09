@@ -905,9 +905,9 @@ int main(int argc, char **argv)
     }
 
     // argv should be [number_of_nodes, node_info_file, my_node_id, period]
-    if (argc != 5)
+    if (argc != 6)
     {
-        fprintf(stderr, "Error: expected 3 command line arguments (number of nodes, node info file, my node id, period), found: %d\n", argc - 1);
+        fprintf(stderr, "Error: expected 5 command line arguments (number of nodes, node info file, my node id, period, experiment id), found: %d\n", argc - 1);
         exit(1);
     }
 
