@@ -119,7 +119,8 @@ int free_peer_info()
     pthread_mutex_lock(&this_node.mu);
     for (int i = 0; i < this_node.num_nodes; i++)
     {
-        freeaddrinfo(this_node.peers[i].address_info);
+        freeaddrinfo(this_node.peers[i].send_addrinfo);
+        freeaddrinfo(this_node.peers[i].listen_addrinfo);
     }
     pthread_mutex_unlock(&this_node.mu);
     return 0;
@@ -210,6 +211,8 @@ int handle_data(long msg) // finds which handler function to call and spins-off 
 int handle_heartbeat(long msg)
 {
     int sender_id = get_msg_node_id(msg);
+
+    printf("Received heartbeat from node %d\n", sender_id);
 
     // set initial heartbeat exchanged value = true and reset heartbeat timeout
     pthread_mutex_lock(&this_node.mu);
@@ -357,7 +360,7 @@ int handle_leader_msg(long msg)
 }
 
 /* NETWORK FUNCTIONS */
-int prepare_address_info(char *address, char *port, struct peer_info *peer)
+int prepare_address_info(char *address, char *port, struct addrinfo **res)
 {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
@@ -365,7 +368,7 @@ int prepare_address_info(char *address, char *port, struct peer_info *peer)
     hints.ai_socktype = SOCK_DGRAM;
     int status;
 
-    if ((status = getaddrinfo(address, port, &hints, &peer->address_info)))
+    if ((status = getaddrinfo(address, port, &hints, res)))
     {
         fprintf(stderr, "Error with getting address info, status = %s\n", gai_strerror(status));
         return -1;
@@ -373,22 +376,21 @@ int prepare_address_info(char *address, char *port, struct peer_info *peer)
     return 0;
 }
 
-int prepare_socket(struct peer_info *peer, int send_socket)
+int get_socket(struct addrinfo *address_info, int send_socket)
 {
-    struct addrinfo *address_info = peer->address_info;
-
+    int sock;
     if (send_socket)
-        peer->socket = socket(address_info->ai_family, address_info->ai_socktype | SOCK_NONBLOCK, address_info->ai_protocol);
-    // else
-    peer->socket = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol);
+        sock = socket(address_info->ai_family, address_info->ai_socktype | SOCK_NONBLOCK, address_info->ai_protocol);
+    else
+        sock = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol);
 
-    if (peer->socket == -1)
+    if (sock == -1)
     {
         fprintf(stderr, "Error creating socket\n");
         return -1;
     }
 
-    return 0;
+    return sock;
 }
 
 int send_once(long msg, struct addrinfo *addrinfo, int sock) // helper function for msg sending
@@ -419,9 +421,9 @@ void *send_heartbeat(void *void_args) // helper function for heartbeats
 
         // send data
         int bytes_sent;
-        struct addrinfo *address_info = args->peer.address_info;
+        struct addrinfo *address_info = args->peer.send_addrinfo;
 
-        if ((bytes_sent = sendto(args->peer.socket, &args->msg, sizeof(long), 0, address_info->ai_addr, address_info->ai_addrlen)) == -1)
+        if ((bytes_sent = sendto(args->peer.send_socket, &args->msg, sizeof(long), 0, address_info->ai_addr, address_info->ai_addrlen)) == -1)
         {
             fprintf(stderr, "Error with sending data\n");
             free(args);
@@ -449,11 +451,11 @@ void *recv_until(void *void_args) // for listening for messages
     struct timeval recv_to;
     recv_to.tv_sec = 1;
     recv_to.tv_usec = 0;
-    setsockopt(args->peer.socket, SOL_SOCKET, SO_RCVTIMEO, &recv_to, sizeof(recv_to));
+    setsockopt(args->peer.listen_socket, SOL_SOCKET, SO_RCVTIMEO, &recv_to, sizeof(recv_to));
 
     // bind to port
-    struct addrinfo *address_info = args->peer.address_info;
-    if (bind(args->peer.socket, address_info->ai_addr, address_info->ai_addrlen) == -1)
+    struct addrinfo *address_info = args->peer.listen_addrinfo;
+    if (bind(args->peer.listen_socket, address_info->ai_addr, address_info->ai_addrlen) == -1)
     {
         fprintf(stderr, "Error with binding receiver to port\n");
         pthread_exit(NULL);
@@ -479,7 +481,7 @@ void *recv_until(void *void_args) // for listening for messages
 
         // receive data
         int bytes_received;
-        if ((bytes_received = recvfrom(args->peer.socket, &recv_buf, recv_buf_size, 0, (struct sockaddr *)&from, &fromlen)) > 0)
+        if ((bytes_received = recvfrom(args->peer.listen_socket, &recv_buf, recv_buf_size, 0, (struct sockaddr *)&from, &fromlen)) > 0)
         {
             handle_data(recv_buf);
         }
@@ -529,7 +531,7 @@ void *send_election_reply_msg(void *void_args)
 
         pthread_mutex_unlock(&this_node.mu);
 
-        send_once(msg, args->peer.address_info, args->peer.socket);
+        send_once(msg, args->peer.send_addrinfo, args->peer.send_socket);
 
         // sleep
         struct timespec ts;
@@ -565,7 +567,7 @@ void *broadcast_election_msg(void *void_args)
             long msg = encode_msg(election_msg, this_node.id, args->term, get_my_link_info());
 
             pthread_mutex_unlock(&this_node.mu);
-            send_once(msg, this_node.peers[i].address_info, this_node.peers[i].socket);
+            send_once(msg, this_node.peers[i].send_addrinfo, this_node.peers[i].send_socket);
             pthread_mutex_lock(&this_node.mu);
         }
 
@@ -605,7 +607,7 @@ void *broadcast_leader_msg(void *void_args)
             long msg = encode_msg(leader_msg, this_node.id, args->term, args->path_info);
 
             pthread_mutex_unlock(&this_node.mu);
-            send_once(msg, this_node.peers[i].address_info, this_node.peers[i].socket);
+            send_once(msg, this_node.peers[i].send_addrinfo, this_node.peers[i].send_socket);
             pthread_mutex_lock(&this_node.mu);
         }
 
@@ -670,15 +672,23 @@ int begin_heartbeats()
 
 int begin_listening() // listen for messages until coordination ends
 {
-    struct recv_args *args = (struct recv_args *)malloc(sizeof(struct recv_args));
-
     pthread_mutex_lock(&this_node.mu);
-    args->peer = this_node.peers[this_node.id];
-    args->condition = &this_node.end_coordination;
-    args->mutex = &this_node.mu;
-    pthread_mutex_unlock(&this_node.mu);
 
-    thread_pool_assign_task(recv_until, args);
+    for (int i = 0; i < this_node.num_nodes; i++)
+    {
+        if (i == this_node.id)
+            continue;
+
+        struct recv_args *args = (struct recv_args *)malloc(sizeof(struct recv_args));
+
+        args->peer = this_node.peers[i];
+        args->condition = &this_node.end_coordination;
+        args->mutex = &this_node.mu;
+
+        thread_pool_assign_task(recv_until, args);
+    }
+
+    pthread_mutex_unlock(&this_node.mu);
 
     return 0;
 }
@@ -893,22 +903,21 @@ int main(int argc, char **argv)
     struct peer_info peers[num_nodes];
     for (int i = 0; i < num_nodes; i++)
     {
-        char address[16];
+        char send_addr[16];
+        char listen_addr[16];
         char port[16];
-        int send_socket = 1; // for socket options
 
-        if ((fscanf(node_info_file, "%d %15s %15s", &peers[i].id, address, port)) != 3)
+        if ((fscanf(node_info_file, "%d %15s %15s %15s", &peers[i].id, send_addr, listen_addr, port)) != 4)
         {
             fprintf(stderr, "Error reading node info file\n");
             fclose(node_info_file);
             exit(1);
         }
 
-        if (i == my_id) // receive socket
-            send_socket = 0;
-
-        prepare_address_info(address, port, &peers[i]);
-        prepare_socket(&peers[i], send_socket);
+        prepare_address_info(send_addr, port, &peers[i].send_addrinfo);
+        prepare_address_info(listen_addr, port, &peers[i].listen_addrinfo);
+        peers[i].send_socket = get_socket(peers[i].send_addrinfo, 1);
+        peers[i].listen_socket = get_socket(peers[i].listen_addrinfo, 0);
 
         peers[i].connected = 1;
         peers[i].link_info = 0;
