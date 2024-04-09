@@ -112,15 +112,11 @@ int write_to_log(int type)
     struct timeval now;
     gettimeofday(&now, NULL);
 
-    pthread_mutex_lock(&this_node.mu);
-
     if (fprintf(this_node.log, "%d,%li.%li\n", type, now.tv_sec, now.tv_usec) >= 0)
     {
-        pthread_mutex_unlock(&this_node.mu);
         return 0;
     }
 
-    pthread_mutex_unlock(&this_node.mu);
     fprintf(stderr, "Error writing to log file\n");
     return -1;
 }
