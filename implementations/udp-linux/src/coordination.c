@@ -327,6 +327,8 @@ int handle_election_reply(long msg)
     // check if became leader
     if (this_node.votes_received >= this_node.connected_count) // this node is leader
     {
+        write_to_log(election_end);
+
         printf("I won leader election of term %d!\n", this_node.term);
 
         this_node.leader_id = this_node.id;
