@@ -49,6 +49,9 @@ struct coordination_node
     int votes_received;
     int *voted_peers;
     int election_status;
+
+    FILE *log;
+    int last_election_term_logged;
 };
 
 struct send_args // not all fields may be used
@@ -82,6 +85,13 @@ enum election_statuses
     in_progress, // in progress
 };
 
+enum log_type
+{
+    crash,
+    election_end,
+    rejoin_error,
+};
+
 /* THREAD POOL FUNCTIONS */
 int thread_pool_init(int count);
 int thread_pool_destroy();
@@ -93,6 +103,7 @@ pthread_t *get_thread();
 void sigint_handler();
 
 /* UTILS*/
+int write_to_log(int type);
 double get_elapsed_time_ms(struct timeval start);
 int free_peer_info();
 short get_my_link_info();

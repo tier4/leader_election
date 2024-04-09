@@ -107,6 +107,24 @@ void sigint_handler() // this allows program to finish cleanly on CTRL-C press
 }
 
 /* UTILS */
+int write_to_log(int type)
+{
+    struct timeval now;
+    gettimeofday(&now, NULL);
+
+    pthread_mutex_lock(&this_node.mu);
+
+    if (fprintf(this_node.log, "%d,%li.%li\n", type, now.tv_sec, now.tv_usec) >= 0)
+    {
+        pthread_mutex_unlock(&this_node.mu);
+        return 0;
+    }
+
+    pthread_mutex_unlock(&this_node.mu);
+    fprintf(stderr, "Error writing to log file\n");
+    return -1;
+}
+
 double get_elapsed_time_ms(struct timeval start)
 {
     struct timeval now;
@@ -214,10 +232,18 @@ int handle_heartbeat(long msg)
 
     printf("Received heartbeat from node %d\n", sender_id);
 
-    // set initial heartbeat exchanged value = true and reset heartbeat timeout
     pthread_mutex_lock(&this_node.mu);
+
+    // error if node is rejoining
+    if (!this_node.peers[sender_id].connected)
+    {
+        write_to_log(rejoin_error);
+    }
+
+    // set initial heartbeat exchanged value = true and reset heartbeat timeout
     this_node.peers[sender_id].heartbeat_exchanged = 1;
     gettimeofday(&this_node.peers[sender_id].timeout_start, NULL);
+
     pthread_mutex_unlock(&this_node.mu);
 
     return 0;
@@ -348,6 +374,12 @@ int handle_leader_msg(long msg)
     }
 
     // else, acknowledge leader, announce election is over
+    if (this_node.term > this_node.last_election_term_logged)
+    {
+        this_node.last_election_term_logged = this_node.term;
+        write_to_log(election_end);
+    }
+
     printf("Acknowledging node %d is leader of term %d\n", get_msg_node_id(msg), this_node.term);
     printf("New path = %d\n", get_msg_path_info(msg));
 
@@ -898,6 +930,23 @@ int main(int argc, char **argv)
     period = strtol(argv[4], NULL, 10);
     timeout_threshold = 5 * period;
 
+    // create file for logging
+    char fname[32];
+    if (strlen(argv[5]) > (32 - 7))
+    {
+        fprintf(stderr, "Error: experiment id is too large %s\n", argv[5]);
+        exit(1);
+    }
+    strcpy(fname, "exp");
+    strcat(fname, argv[5]);
+    strcat(fname, ".csv");
+    if ((this_node.log = fopen(fname, "w+")) == NULL)
+    {
+        fprintf(stderr, "Error creating log file %s\n", argv[5]);
+        exit(1);
+    }
+    this_node.last_election_term_logged = -1;
+
     // open info file
     FILE *node_info_file;
     if ((node_info_file = fopen(argv[2], "r")) == NULL)
@@ -968,6 +1017,11 @@ int main(int argc, char **argv)
     printf("Freeing peer_info and voted_peers...\n");
     free_peer_info();
     free(this_node.voted_peers);
+
+    // write to log time of program crash and exit
+    write_to_log(crash);
+
+    fclose(this_node.log);
 
     printf("Done. Exiting main()\n");
 
