@@ -11,9 +11,6 @@
 #include "coordination.h"
 #include <signal.h>
 
-// Heartbeat timeout length
-#define HB_TIMEOUT_LEN 5000 // 5 seconds for testing
-
 // Hardcoded paths (ORDERED BY PRIORITY)
 #define NUM_PATHS 4
 // assume in node_id order, we have (Main ECU, Sub ECU, Main VCU, Sub VCU)
@@ -23,6 +20,9 @@ struct path paths[NUM_PATHS] = {{0, 2}, {0, 3}, {1, 2}, {1, 3}};
 /* GLOBAL DATA */
 struct coordination_node this_node;
 struct thread_pool tpool;
+
+int period;
+int timeout_threshold;
 
 /* THREAD POOL FUNCTIONS */
 int thread_pool_init(int count)
@@ -433,7 +433,7 @@ void *send_heartbeat(void *void_args) // helper function for heartbeats
         // sleep for a bit between heartbeats
         struct timespec ts;
         ts.tv_sec = 0;
-        ts.tv_nsec = 500 * 1000 * 1000; // 500ms
+        ts.tv_nsec = period * 1000 * 1000; // period ms
         nanosleep(&ts, NULL);
     }
 
@@ -536,7 +536,7 @@ void *send_election_reply_msg(void *void_args)
         // sleep
         struct timespec ts;
         ts.tv_sec = 0;
-        ts.tv_nsec = 500 * 1000 * 1000; // 500ms TODO: adjustable
+        ts.tv_nsec = period * 1000 * 1000; // period ms
         nanosleep(&ts, NULL);
 
         pthread_mutex_lock(&this_node.mu);
@@ -571,11 +571,12 @@ void *broadcast_election_msg(void *void_args)
             pthread_mutex_lock(&this_node.mu);
         }
 
-        // sleep
         pthread_mutex_unlock(&this_node.mu);
+
+        // sleep
         struct timespec ts;
         ts.tv_sec = 0;
-        ts.tv_nsec = 500 * 1000 * 1000; // 500ms TODO: adjustable
+        ts.tv_nsec = period * 1000 * 1000; // period ms
         nanosleep(&ts, NULL);
 
         pthread_mutex_lock(&this_node.mu);
@@ -611,11 +612,12 @@ void *broadcast_leader_msg(void *void_args)
             pthread_mutex_lock(&this_node.mu);
         }
 
-        // sleep
         pthread_mutex_unlock(&this_node.mu);
+
+        // sleep
         struct timespec ts;
         ts.tv_sec = 0;
-        ts.tv_nsec = 500 * 1000 * 1000; // 500ms TODO: adjustable
+        ts.tv_nsec = period * 1000 * 1000; // period ms
         nanosleep(&ts, NULL);
 
         pthread_mutex_lock(&this_node.mu);
@@ -703,7 +705,7 @@ void *track_heartbeat_timers()
         // sleep for a bit waiting for heartbeats to be exchanges
         struct timespec ts;
         ts.tv_sec = 0;
-        ts.tv_nsec = 250 * 1000 * 1000; // 250ms
+        ts.tv_nsec = period * 1000 * 1000; // period ms
         nanosleep(&ts, NULL);
 
         // first make sure coordination hasn't ended
@@ -740,7 +742,7 @@ void *track_heartbeat_timers()
         {
             if (this_node.peers[i].id == this_node.id)
                 continue;
-            if (this_node.peers[i].connected && get_elapsed_time_ms(this_node.peers[i].timeout_start) > HB_TIMEOUT_LEN)
+            if (this_node.peers[i].connected && get_elapsed_time_ms(this_node.peers[i].timeout_start) > timeout_threshold)
             {
                 this_node.connected_count -= 1;
                 this_node.peers[i].connected = 0;
@@ -748,12 +750,12 @@ void *track_heartbeat_timers()
             }
         }
 
-        // check every 100ms
         pthread_mutex_unlock(&this_node.mu);
 
+        // check every 'period' ms
         struct timespec ts;
         ts.tv_sec = 0;
-        ts.tv_nsec = 100 * 1000 * 1000;
+        ts.tv_nsec = period * 1000 * 1000;
         nanosleep(&ts, NULL);
 
         pthread_mutex_lock(&this_node.mu);
@@ -870,10 +872,10 @@ int main(int argc, char **argv)
         exit(-1);
     }
 
-    // argv should be [number_of_nodes, node_info_file, my_node_id]
-    if (argc != 4)
+    // argv should be [number_of_nodes, node_info_file, my_node_id, period]
+    if (argc != 5)
     {
-        fprintf(stderr, "Error: expected 3 command line arguments (number of nodes, node info file, my node id), found: %d\n", argc - 1);
+        fprintf(stderr, "Error: expected 3 command line arguments (number of nodes, node info file, my node id, period), found: %d\n", argc - 1);
         exit(1);
     }
 
@@ -890,6 +892,11 @@ int main(int argc, char **argv)
 
     // get this process's node id from command line args
     int my_id = strtol(argv[3], NULL, 10);
+
+    // get period for sending messages and checking timeout
+    // heartbeat timeout threshold is 5 times larger than period
+    period = strtol(argv[4], NULL, 10);
+    timeout_threshold = 5 * period;
 
     // open info file
     FILE *node_info_file;
