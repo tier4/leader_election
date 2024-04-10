@@ -112,7 +112,11 @@ int write_to_log(int type)
     struct timeval now;
     gettimeofday(&now, NULL);
 
-    if (fprintf(this_node.log, "%d,%li.%li\n", type, now.tv_sec, now.tv_usec) >= 0)
+    // don't forget adding leading zeros for us value
+    char us_formatted[7];
+    snprintf(us_formatted, 7, "%06li", now.tv_usec);
+
+    if (fprintf(this_node.log, "%d,%li.%s\n", type, now.tv_sec, us_formatted) >= 0)
     {
         return 0;
     }
