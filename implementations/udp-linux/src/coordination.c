@@ -237,6 +237,7 @@ int handle_heartbeat(long msg)
     // error if node is rejoining
     if (!this_node.peers[sender_id].connected)
     {
+        fprintf(stderr, "Error: node %d rejoined the group!\n", sender_id);
         write_to_log(rejoin_error);
     }
 
@@ -810,6 +811,13 @@ void *heartbeat_timeout_handler(void *void_args)
     printf("No heartbeat received from node %d! Starting leader election...\n", this_node.peers[peer_id].id);
     printf("Connected count is now %d\n", this_node.connected_count);
 
+    // log error if timeouts > 1
+    if (++this_node.num_timeouts > 1)
+    {
+        fprintf(stderr, "Error: 2 or more faults detected!\n");
+        write_to_log(double_fault_error);
+    }
+
     // atomically update term and votes_received
     this_node.term++; // TODO: add mod M for wrap around
     this_node.votes_received = 0;
@@ -931,6 +939,9 @@ int main(int argc, char **argv)
     // heartbeat timeout threshold is 5 times larger than period
     period = strtol(argv[4], NULL, 10);
     timeout_threshold = 5 * period;
+
+    // no timeouts detected to start
+    this_node.num_timeouts = 0;
 
     // create file for logging
     char fname[64];

@@ -52,6 +52,7 @@ struct coordination_node
 
     FILE *log;
     int last_election_term_logged;
+    int num_timeouts;
 };
 
 struct send_args // not all fields may be used
@@ -90,6 +91,7 @@ enum log_type
     crash,
     election_end,
     rejoin_error,
+    double_fault_error,
 };
 
 /* THREAD POOL FUNCTIONS */
