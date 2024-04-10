@@ -933,8 +933,8 @@ int main(int argc, char **argv)
     timeout_threshold = 5 * period;
 
     // create file for logging
-    char fname[32];
-    if (strlen(argv[5]) > (32 - 8))
+    char fname[64];
+    if (strlen(argv[5]) > (64 - 12))
     {
         fprintf(stderr, "Error: experiment id is too large %s\n", argv[5]);
         exit(1);
