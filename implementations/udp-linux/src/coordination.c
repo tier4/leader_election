@@ -934,12 +934,14 @@ int main(int argc, char **argv)
 
     // create file for logging
     char fname[32];
-    if (strlen(argv[5]) > (32 - 7))
+    if (strlen(argv[5]) > (32 - 8))
     {
         fprintf(stderr, "Error: experiment id is too large %s\n", argv[5]);
         exit(1);
     }
-    strcpy(fname, "exp");
+    strcpy(fname, "node");
+    strcat(fname, argv[3]); // this node's id
+    strcat(fname, "_exp");
     strcat(fname, argv[5]);
     strcat(fname, ".csv");
     if ((this_node.log = fopen(fname, "w+")) == NULL)
