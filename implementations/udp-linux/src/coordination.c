@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include "coordination.h"
 #include <signal.h>
+#include <sys/resource.h>
 
 // Hardcoded paths (ORDERED BY PRIORITY)
 #define NUM_PATHS 4
@@ -898,6 +899,9 @@ int path_is_valid(struct path p) // path should be pair of node ids
 
 int main(int argc, char **argv)
 {
+    // set CPU priority
+    setpriority(PRIO_PROCESS, 0, -20);
+
     // Initialize thread_pool
     thread_pool_init(20); // TODO: adjust this value as needed
 
