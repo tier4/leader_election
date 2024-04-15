@@ -788,6 +788,7 @@ void *track_heartbeat_timers()
             {
                 this_node.connected_count -= 1;
                 this_node.peers[i].connected = 0;
+                write_to_log(timeout_detection);
                 thread_pool_assign_task(heartbeat_timeout_handler, (void *)(long)i);
             }
         }

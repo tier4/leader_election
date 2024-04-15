@@ -89,6 +89,7 @@ enum election_statuses
 enum log_type
 {
     crash,
+    timeout_detection,
     election_end,
     rejoin_error,
     double_fault_error,
