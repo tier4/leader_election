@@ -240,6 +240,12 @@ int handle_heartbeat(long msg)
     {
         fprintf(stderr, "Error: node %d rejoined the group!\n", sender_id);
         write_to_log(rejoin_error);
+
+        // finish election
+        this_node.election_status = inactive;
+        this_node.end_coordination = 1;
+        pthread_mutex_unlock(&this_node.mu);
+        return 0;
     }
 
     // set initial heartbeat exchanged value = true and reset heartbeat timeout
@@ -817,6 +823,12 @@ void *heartbeat_timeout_handler(void *void_args)
     {
         fprintf(stderr, "Error: 2 or more faults detected!\n");
         write_to_log(double_fault_error);
+
+        // finish election
+        this_node.election_status = inactive;
+        this_node.end_coordination = 1;
+        pthread_mutex_unlock(&this_node.mu);
+        return 0;
     }
 
     // atomically update term and votes_received
