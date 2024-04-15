@@ -231,7 +231,7 @@ int handle_heartbeat(long msg)
 {
     int sender_id = get_msg_node_id(msg);
 
-    printf("Received heartbeat from node %d\n", sender_id);
+   // printf("Received heartbeat from node %d\n", sender_id);
 
     pthread_mutex_lock(&this_node.mu);
 
@@ -263,13 +263,13 @@ int handle_election_msg(long msg)
     int node_id = get_msg_node_id(msg);
     int connected_count = get_msg_connected_count(msg);
 
-    printf("Handling election msg received from node %d\n term = %d, connected_count = %d, link_info = %d\n", node_id, term, connected_count, get_msg_link_info(msg));
+   // printf("Handling election msg received from node %d\n term = %d, connected_count = %d, link_info = %d\n", node_id, term, connected_count, get_msg_link_info(msg));
 
     pthread_mutex_lock(&this_node.mu);
 
     if (term > this_node.term) // we are in old term, so update term and start our own election
     {
-        printf("election_msg from node %d received with higher term than current term. Updating term and starting leader election...\n", node_id);
+       // printf("election_msg from node %d received with higher term than current term. Updating term and starting leader election...\n", node_id);
 
         // atomically change term and votes received
         this_node.term = term;
@@ -284,8 +284,8 @@ int handle_election_msg(long msg)
     {
         if (connected_count > this_node.connected_count || (connected_count == this_node.connected_count && node_id < this_node.id)) // give vote
         {
-            printf("Giving vote to node %d, for term %d\n", node_id, this_node.term);
-            printf("My id = %d, term = %d, connected_count = %d\n", this_node.id, this_node.term, this_node.connected_count);
+           // printf("Giving vote to node %d, for term %d\n", node_id, this_node.term);
+           // printf("My id = %d, term = %d, connected_count = %d\n", this_node.id, this_node.term, this_node.connected_count);
 
             struct send_args *reply_args = (struct send_args *)malloc(sizeof(struct send_args));
 
@@ -330,8 +330,8 @@ int handle_election_reply(long msg)
     }
 
     // count vote
-    printf("Received vote from node %d for term %d\n", node_id, term);
-    printf("Now, votes_received = %d, connected_count = %d\n", this_node.votes_received + 1, this_node.connected_count);
+   // printf("Received vote from node %d for term %d\n", node_id, term);
+   // printf("Now, votes_received = %d, connected_count = %d\n", this_node.votes_received + 1, this_node.connected_count);
 
     this_node.voted_peers[this_node.votes_received] = node_id; // keep track of whose vote
     ++this_node.votes_received;
@@ -351,7 +351,7 @@ int handle_election_reply(long msg)
         // election over
         this_node.election_status = inactive;
 
-        printf("Sending out leader message...\n");
+       // printf("Sending out leader message...\n");
 
         struct send_args *args = (struct send_args *)malloc(sizeof(struct send_args));
         args->term = term;
@@ -373,7 +373,7 @@ int handle_election_reply(long msg)
 
 int handle_leader_msg(long msg)
 {
-    printf("Received leader message...\n");
+   // printf("Received leader message...\n");
 
     // ignore old messages
     pthread_mutex_lock(&this_node.mu);
@@ -391,7 +391,7 @@ int handle_leader_msg(long msg)
     }
 
     printf("Acknowledging node %d is leader of term %d\n", get_msg_node_id(msg), this_node.term);
-    printf("New path = %d\n", get_msg_path_info(msg));
+   // printf("New path = %d\n", get_msg_path_info(msg));
 
     // keep track of leader
     this_node.leader_id = get_msg_node_id(msg);
@@ -674,19 +674,19 @@ void *broadcast_leader_msg(void *void_args)
 /* COORDINATION FUNCTIONS */
 int coordination()
 {
-    printf("setting initial heartbeat timers\n");
+   // printf("setting initial heartbeat timers\n");
     // being heartbeat timers and spinoff thread tracking heartbeat timers
     begin_heartbeat_timers();
 
-    printf("beginning sending heartbeats\n");
+   // printf("beginning sending heartbeats\n");
     // for each other node, spinoff thread sending periodic heartbeats
     begin_heartbeats();
 
-    printf("beginning listening\n");
+   // printf("beginning listening\n");
     // start thread listening for communication from other nodes
     begin_listening();
 
-    printf("coordination started successfully\n");
+   // printf("coordination started successfully\n");
 
     return 0;
 }
@@ -772,7 +772,7 @@ void *track_heartbeat_timers()
         pthread_mutex_unlock(&this_node.mu);
     }
 
-    printf("All heartbeats exchanged. Starting heartbeat timers...\n");
+   // printf("All heartbeats exchanged. Starting heartbeat timers...\n");
 
     // start checking timers
     pthread_mutex_lock(&this_node.mu);
@@ -812,11 +812,12 @@ void *heartbeat_timeout_handler(void *void_args)
 {
     // args: (int peer_id)
     int peer_id = (long)void_args;
+    peer_id++;
 
     pthread_mutex_lock(&this_node.mu);
 
-    printf("No heartbeat received from node %d! Starting leader election...\n", this_node.peers[peer_id].id);
-    printf("Connected count is now %d\n", this_node.connected_count);
+   // printf("No heartbeat received from node %d! Starting leader election...\n", this_node.peers[peer_id].id);
+   // printf("Connected count is now %d\n", this_node.connected_count);
 
     // log error if timeouts > 1
     if (++this_node.num_timeouts > 1)
@@ -891,7 +892,7 @@ short get_best_path() // use global paths[] (ordered by priority, hardcoded valu
 
 int path_is_valid(struct path p) // path should be pair of node ids
 {
-    printf("Checking validity of path (node_%d, node_%d)\n", p.node1, p.node2);
+   // printf("Checking validity of path (node_%d, node_%d)\n", p.node1, p.node2);
 
     // "Note that if the leader cannot recieve any information from a node,
     // then the leader acts as if it recieved all-False array"
@@ -1024,7 +1025,7 @@ int main(int argc, char **argv)
     this_node.connected_count = num_nodes - 1;
     this_node.peers[this_node.id].link_info = 15; // 1111 in binary, or all connected
 
-    printf("Starting with connected_count = %d\n", this_node.connected_count);
+   // printf("Starting with connected_count = %d\n", this_node.connected_count);
 
     // no leader to start
     this_node.leader_id = -1;
@@ -1045,7 +1046,7 @@ int main(int argc, char **argv)
     thread_pool_destroy();
 
     // clean up other memory
-    printf("Freeing peer_info and voted_peers...\n");
+   // printf("Freeing peer_info and voted_peers...\n");
     free_peer_info();
     free(this_node.voted_peers);
 
