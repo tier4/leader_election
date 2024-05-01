@@ -1,15 +1,5 @@
-#include <stdio.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <time.h>
-#include <sys/time.h>
+
 #include "coordination.h"
-#include <signal.h>
-#include <sys/resource.h>
 
 // Hardcoded paths (ORDERED BY PRIORITY)
 #define NUM_PATHS 4
@@ -19,9 +9,6 @@ struct path paths[NUM_PATHS] = {{0, 2}, {0, 3}, {1, 2}, {1, 3}};
 
 /* GLOBAL DATA */
 struct coordination_node this_node;
-
-int period;
-int timeout_threshold;
 
 int get_my_connected_count() {
     int connected_count = 0;
@@ -407,7 +394,7 @@ int check_heartbeat_timeout()
         if (this_node.peers[i].id == this_node.id)
             continue;
         
-        if (this_node.peers[i].connected && get_elapsed_time_ms(this_node.peers[i].timeout_start) > timeout_threshold)
+        if (this_node.peers[i].connected && get_elapsed_time_ms(this_node.peers[i].timeout_start) > this_node.timeout_threshold)
         {
             this_node.peers[i].connected = 0;
             heartbeat_timeout_handler();
@@ -450,12 +437,33 @@ int coordination()
 
     while (1)
     {
+        struct timeval start_time;
+        gettimeofday(&start_time, NULL);
+
         broadcast_heartbeat();
 
         check_heartbeat_timeout();
 
         if (check_messages() < 0)
             break;
+
+        // sleep until period ms passes
+        while (1)
+        {
+            struct timeval now;
+            gettimeofday(&now, NULL);
+            int elapsed_time = (now.tv_sec - start_time.tv_sec) * 1000.0 + (now.tv_usec - start_time.tv_usec) / 1000.0;
+            if (elapsed_time < this_node.period * 1000 * 1000)
+            {
+                struct timespec ts;
+                ts.tv_sec = 0;
+                ts.tv_nsec = this_node.period * 1000 * 100; // period/10 ms
+                nanosleep(&ts, NULL);
+            } else
+            {
+                break;
+            }
+        }
     }
 
     return 0;
@@ -464,7 +472,7 @@ int coordination()
 int main(int argc, char **argv)
 {
     // set CPU priority
-    // setpriority(PRIO_PROCESS, 0, -20);
+    setpriority(PRIO_PROCESS, 0, -20);
 
     // argv should be [number_of_nodes, node_info_file, my_node_id, period]
     if (argc != 6)
@@ -489,8 +497,8 @@ int main(int argc, char **argv)
 
     // get period for sending messages and checking timeout
     // heartbeat timeout threshold is 5 times larger than period
-    period = strtol(argv[4], NULL, 10);
-    timeout_threshold = 5 * period;
+    this_node.period = strtol(argv[4], NULL, 10);
+    this_node.timeout_threshold = 5 * this_node.period;
 
     // open info file
     FILE *node_info_file;

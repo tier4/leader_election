@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <time.h>
 #include <sys/time.h>
 
 /* STRUCTS */
@@ -36,6 +35,8 @@ struct coordination_node
     struct peer_info *peers;
     int term;
     int leader_id;
+    int period;
+    int timeout_threshold;
 };
 
 enum msg_type
