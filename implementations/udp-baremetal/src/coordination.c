@@ -584,8 +584,6 @@ int main(int argc, char **argv)
     free_peer_info();
     free(this_node.voted_peers);
 
-    fclose(this_node.log);
-
     printf("Done. Exiting main()\n");
 
     exit(0);

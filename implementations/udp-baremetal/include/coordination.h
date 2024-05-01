@@ -39,8 +39,6 @@ struct coordination_node
     int votes_received;
     int *voted_peers;
     int end_coordination;
-
-    FILE *log;
     int num_timeouts;
 };
 
