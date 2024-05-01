@@ -54,9 +54,6 @@ enum election_status
     sending_leader_msg,
 };
 
-/* SIGNAL HANDLER */
-void sigint_handler();
-
 /* UTILS*/
 int get_my_connected_count();
 double get_elapsed_time_ms(struct timeval start);
