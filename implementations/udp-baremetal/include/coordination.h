@@ -65,15 +65,6 @@ enum msg_type
     leader_msg
 };
 
-enum log_type
-{
-    crash,
-    timeout_detection,
-    election_end,
-    rejoin_error,
-    double_fault_error,
-};
-
 enum election_status
 {
     sending_heartbeat,
@@ -107,7 +98,7 @@ int handle_leader_msg(long msg);
 
 /* NETWORK FUNCTIONS */
 int prepare_address_info(char *address, char *port, struct addrinfo **res);
-int get_socket(struct addrinfo *address_info, int send_socket);
+int get_socket(struct addrinfo *address_info);
 int send_once(long msg, struct addrinfo *addrinfo, int sock);
 int broadcast_heartbeat();
 int broadcast_election_msg(int term);

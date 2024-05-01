@@ -139,7 +139,7 @@ int handle_heartbeat(long msg)
 {
     int node_id = get_msg_node_id(msg);
 
-    if (this_node.peers[node_id].heartbeat_exchanged && !this_node.peers[i].connected) {
+    if (this_node.peers[node_id].heartbeat_exchanged && !this_node.peers[node_id].connected) {
         fprintf(stderr, "Error: rejoin\n");
         return -1;
     }
@@ -262,13 +262,10 @@ int prepare_address_info(char *address, char *port, struct addrinfo **res)
     return 0;
 }
 
-int get_socket(struct addrinfo *address_info, int send_socket)
+int get_socket(struct addrinfo *address_info)
 {
     int sock;
-    if (send_socket)
-        sock = socket(address_info->ai_family, address_info->ai_socktype | SOCK_NONBLOCK, address_info->ai_protocol);
-    else
-        sock = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol);
+    sock = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol);
 
     if (sock == -1)
     {
@@ -546,8 +543,8 @@ int main(int argc, char **argv)
 
         prepare_address_info(send_addr, port, &peers[i].send_addrinfo);
         prepare_address_info(listen_addr, port, &peers[i].listen_addrinfo);
-        peers[i].send_socket = get_socket(peers[i].send_addrinfo, 1);
-        peers[i].listen_socket = get_socket(peers[i].listen_addrinfo, 0);
+        peers[i].send_socket = get_socket(peers[i].send_addrinfo);
+        peers[i].listen_socket = get_socket(peers[i].listen_addrinfo);
 
         peers[i].connected = 1;
         peers[i].link_info = 0;
