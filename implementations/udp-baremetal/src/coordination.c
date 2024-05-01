@@ -1,6 +1,10 @@
 
 #include "coordination.h"
 
+// This is a mask for term:
+// term is incremented like 0, 1, ..., MASK, 0, 1, ..., MASK, 0, ...
+#define MASK 255
+
 // Hardcoded paths (ORDERED BY PRIORITY)
 #define NUM_PATHS 4
 // assume in node_id order, we have (Main ECU, Sub ECU, Main VCU, Sub VCU)
@@ -95,6 +99,19 @@ int get_msg_connected_count(long msg)
     return connected_count - 1; // subtract one to exclude self
 }
 
+int compare_term(int term, int base_term)
+{
+    if (term == base_term) {
+        return 0;
+    }
+
+    if (((term - base_term + MASK + 1) & MASK) < MASK / 2) {
+        return 1; // term is larger than base_term
+    } else {
+        return -1;// term is smaller than base_term
+    }
+}
+
 /* DATA HANDLERS */
 int handle_data(long msg)
 {
@@ -135,7 +152,7 @@ int handle_election_msg(long msg)
     int node_id = get_msg_node_id(msg);
     int connected_count = get_msg_connected_count(msg);
 
-    if (term > this_node.term) // we are in old term, so update term and start our own election
+    if (compare_term(term, this_node.term) == 1) // we are in old term, so update term and start our own election
     {
         // atomically change term and votes received
         this_node.term = term;
@@ -145,7 +162,7 @@ int handle_election_msg(long msg)
         begin_election();
     }
     
-    if (term == this_node.term)
+    if (compare_term(term, this_node.term) == 0)
     {
         if (connected_count > get_my_connected_count() || (connected_count == get_my_connected_count() && node_id < this_node.id))
         {
@@ -166,10 +183,10 @@ int handle_election_reply(long msg)
     int term = get_msg_term(msg);
     int node_id = get_msg_node_id(msg);
 
-    if (term < this_node.term) {
+    if (compare_term(term, this_node.term) == -1) {
         // throw away old replies
         return 0;
-    } else if (term > this_node.term) {
+    } else if (compare_term(term, this_node.term) == 1) {
         // is must not happen
         return -1;
     }
@@ -208,10 +225,10 @@ int handle_leader_msg(long msg)
 {
     int term = get_msg_term(msg);
 
-    if (term < this_node.term) {
+    if (compare_term(term, this_node.term) == -1) {
         // throw away old leader messages
         return 0;
-    } else if (term > this_node.term) {
+    } else if (compare_term(term, this_node.term) == 1) {
         // is must not happen
         return -1;
     }
@@ -376,7 +393,7 @@ int begin_election()
 
 int heartbeat_timeout_handler()
 {
-    this_node.term++; // TODO: add mod M for wrap around
+    this_node.term = (this_node.term + 1) & MASK;
     for (int i = 0; i < this_node.num_nodes; i++) {
         this_node.peers[i].has_voted = 0;
     }

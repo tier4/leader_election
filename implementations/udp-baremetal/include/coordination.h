@@ -67,6 +67,7 @@ short get_msg_term(long msg);
 short get_msg_path_info(long msg);
 short get_msg_link_info(long msg);
 int get_msg_connected_count(long msg);
+int compare_term(int term, int base_term);
 
 /* DATA HANDLERS */
 int handle_data(long msg);
