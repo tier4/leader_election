@@ -482,15 +482,7 @@ int main(int argc, char **argv)
     }
 
     // get number of nodes from command line args
-    int num_nodes = strtol(argv[1], NULL, 10);
-
-    // get list of peer node's info from command line args
-    /*
-    file format should be:
-    id address port
-    id address port
-    ...
-    */
+    this_node.num_nodes = strtol(argv[1], NULL, 10);
 
     // get this process's node id from command line args
     this_node.id = strtol(argv[3], NULL, 10);
@@ -509,8 +501,8 @@ int main(int argc, char **argv)
     }
 
     // fill peer info
-    struct peer_info peers[num_nodes];
-    for (int i = 0; i < num_nodes; i++)
+    struct peer_info peers[this_node.num_nodes];
+    for (int i = 0; i < this_node.num_nodes; i++)
     {
         char send_addr[16];
         char listen_addr[16];
@@ -537,13 +529,8 @@ int main(int argc, char **argv)
 
     // initialize this_node struct
     this_node.peers = peers;
-    this_node.num_nodes = num_nodes;
-
-    // set term = 0, no disconnected nodes, path accordingly
     this_node.term = 0;
     this_node.peers[this_node.id].link_info = 15; // 1111 in binary, or all connected
-
-    // no leader to start
     this_node.leader_id = -1;
 
     // begin coordination algorithm
