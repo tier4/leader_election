@@ -161,7 +161,9 @@ int handle_election_msg(long msg)
     {
         // atomically change term and votes received
         this_node.term = term;
-        this_node.votes_received = 0;
+        for (int i = 0; i < this_node.num_nodes; i++) {
+            this_node.peers[i].has_voted = 0;
+        }
         begin_election();
     }
     
@@ -196,22 +198,18 @@ int handle_election_reply(long msg)
 
     // update link info of peer
     this_node.peers[node_id].link_info = get_msg_link_info(msg);
+    this_node.peers[node_id].has_voted = 1;
 
-    // make sure not to count multiple votes from same peer
-    for (int i = 0; i < this_node.votes_received; i++)
-    {
-        if (node_id == this_node.voted_peers[i]) // already received this vote, ignore
-        {
-            return 0;
+    // count votes
+    int votes_count = 0;
+    for (int i = 0; i < this_node.num_nodes; i++) {
+        if (this_node.peers[i].has_voted == 1) {
+            votes_count++;
         }
     }
 
-    // count vote
-    this_node.voted_peers[this_node.votes_received] = node_id; // keep track of whose vote
-    ++this_node.votes_received;
-
     // check if became leader
-    if (this_node.votes_received == get_my_connected_count()) // this node is leader
+    if (votes_count == get_my_connected_count()) // this node is leader
     {
         this_node.leader_id = this_node.id;
 
@@ -400,9 +398,10 @@ int begin_election()
 
 int heartbeat_timeout_handler()
 {
-    // atomically update term and votes_received
     this_node.term++; // TODO: add mod M for wrap around
-    this_node.votes_received = 0;
+    for (int i = 0; i < this_node.num_nodes; i++) {
+        this_node.peers[i].has_voted = 0;
+    }
 
     // start election
     begin_election();
@@ -477,7 +476,7 @@ int coordination()
 int main(int argc, char **argv)
 {
     // set CPU priority
-    setpriority(PRIO_PROCESS, 0, -20);
+    // setpriority(PRIO_PROCESS, 0, -20);
 
     // setup SIGINT handler
     struct sigaction sigact;
@@ -567,11 +566,8 @@ int main(int argc, char **argv)
     this_node.leader_id = -1;
 
     // initialize vote structures
-    this_node.votes_received = 0;
-    this_node.voted_peers = (int *)malloc(sizeof(int) * (num_nodes - 1));
-    for (int i = 0; i < num_nodes - 1; i++)
-    {
-        this_node.voted_peers[i] = -1;
+    for (int i = 0; i < num_nodes; i++) {
+        this_node.peers[i].has_voted = 0;
     }
 
     // begin coordination algorithm
@@ -579,7 +575,6 @@ int main(int argc, char **argv)
 
     // clean up other memory
     free_peer_info();
-    free(this_node.voted_peers);
 
     printf("Done. Exiting main()\n");
 

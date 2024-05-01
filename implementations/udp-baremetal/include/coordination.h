@@ -27,6 +27,7 @@ struct peer_info
     unsigned short link_info;
     int heartbeat_exchanged; // check if initial heartbeat has been exchanged
     int election_status; // TODO: これに応じてheartbeatとして送るメッセージを決める
+    int has_voted;
 };
 
 struct coordination_node
@@ -36,8 +37,6 @@ struct coordination_node
     struct peer_info *peers;
     int term;
     int leader_id;
-    int votes_received;
-    int *voted_peers;
     int end_coordination;
     int num_timeouts;
 };
