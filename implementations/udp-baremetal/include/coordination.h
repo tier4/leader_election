@@ -41,21 +41,6 @@ struct coordination_node
     int num_timeouts;
 };
 
-struct send_args // not all fields may be used
-{
-    long msg;
-    struct peer_info peer;
-    int *condition;
-    int term;
-    int path_info;
-};
-
-struct recv_args
-{
-    struct peer_info peer;
-    int *condition;
-};
-
 enum msg_type
 {
     heartbeat_msg,
