@@ -548,6 +548,7 @@ int main(int argc, char **argv)
         peers[i].connected = 1;
         peers[i].link_info = 0;
         peers[i].heartbeat_exchanged = 0;
+        peers[i].has_voted = 0;
     }
 
     fclose(node_info_file);
@@ -564,11 +565,6 @@ int main(int argc, char **argv)
 
     // no leader to start
     this_node.leader_id = -1;
-
-    // initialize vote structures
-    for (int i = 0; i < num_nodes; i++) {
-        this_node.peers[i].has_voted = 0;
-    }
 
     // begin coordination algorithm
     coordination();
