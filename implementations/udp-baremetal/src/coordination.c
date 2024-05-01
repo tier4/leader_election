@@ -3,7 +3,7 @@
 
 // This is a mask for term:
 // term is incremented like 0, 1, ..., MASK, 0, 1, ..., MASK, 0, ...
-#define MASK 255
+#define MASK 15
 
 // Hardcoded paths (ORDERED BY PRIORITY)
 #define NUM_PATHS 4
@@ -57,7 +57,7 @@ short get_my_link_info() // get connected nodes information in encoded form
 }
 
 // encode message to follow network protocol
-long encode_msg(unsigned short type, unsigned short node_id, unsigned short term, unsigned short path_or_link_info)
+long encode_msg(unsigned short type, unsigned short node_id, uint16_t term, unsigned short path_or_link_info)
 {
     return (type << 24) | (node_id << 16) | (term << 8) | path_or_link_info;
 }
@@ -72,7 +72,7 @@ short get_msg_node_id(long msg)
     return (msg >> 16) & 0xFF;
 }
 
-short get_msg_term(long msg)
+uint16_t get_msg_term(long msg)
 {
     return (msg >> 8) & 0xFF;
 }
@@ -99,13 +99,13 @@ int get_msg_connected_count(long msg)
     return connected_count - 1; // subtract one to exclude self
 }
 
-int compare_term(int term, int base_term)
+int compare_term(uint16_t term, uint16_t base_term)
 {
     if (term == base_term) {
         return 0;
     }
 
-    if (((term - base_term + MASK + 1) & MASK) < MASK / 2) {
+    if (((term + MASK + 1 - base_term) & MASK) < MASK / 2) {
         return 1; // term is larger than base_term
     } else {
         return -1;// term is smaller than base_term
@@ -148,7 +148,7 @@ int handle_heartbeat(long msg)
 
 int handle_election_msg(long msg)
 {
-    int term = get_msg_term(msg);
+    uint16_t term = get_msg_term(msg);
     int node_id = get_msg_node_id(msg);
     int connected_count = get_msg_connected_count(msg);
 
@@ -180,7 +180,7 @@ int handle_election_msg(long msg)
 
 int handle_election_reply(long msg)
 {
-    int term = get_msg_term(msg);
+    uint16_t term = get_msg_term(msg);
     int node_id = get_msg_node_id(msg);
 
     if (compare_term(term, this_node.term) == -1) {
@@ -223,7 +223,7 @@ int handle_election_reply(long msg)
 
 int handle_leader_msg(long msg)
 {
-    int term = get_msg_term(msg);
+    uint16_t term = get_msg_term(msg);
 
     if (compare_term(term, this_node.term) == -1) {
         // throw away old leader messages
@@ -370,14 +370,14 @@ int broadcast_heartbeat()
     return 0;
 }
 
-int broadcast_election_msg(int term)
+int broadcast_election_msg(uint16_t term)
 {
     long msg = encode_msg(election_msg, this_node.id, term, get_my_link_info());
     broadcast(msg);
     return 0;
 }
 
-int broadcast_leader_msg(int term, short path_info)
+int broadcast_leader_msg(uint16_t term, short path_info)
 {
     long msg = encode_msg(leader_msg, this_node.id, term, path_info);
     broadcast(msg);
@@ -386,7 +386,7 @@ int broadcast_leader_msg(int term, short path_info)
 
 int begin_election()
 {
-    int term = this_node.term;
+    uint16_t term = this_node.term;
     broadcast_election_msg(term);
     return 0;
 }

@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/time.h>
+#include <stdint.h>
 
 /* STRUCTS */
 struct path
@@ -33,7 +34,7 @@ struct coordination_node
     int id;
     int num_nodes;
     struct peer_info *peers;
-    int term;
+    uint16_t term;
     int leader_id;
     int period;
     int timeout_threshold;
@@ -60,14 +61,14 @@ int get_my_connected_count();
 double get_elapsed_time_ms(struct timeval start);
 int free_peer_info();
 short get_my_link_info();
-long encode_msg(unsigned short type, unsigned short node_id, unsigned short term, unsigned short path_or_link_info);
+long encode_msg(unsigned short type, unsigned short node_id, uint16_t term, unsigned short path_or_link_info);
 short get_msg_type(long msg);
 short get_msg_node_id(long msg);
-short get_msg_term(long msg);
+uint16_t get_msg_term(long msg);
 short get_msg_path_info(long msg);
 short get_msg_link_info(long msg);
 int get_msg_connected_count(long msg);
-int compare_term(int term, int base_term);
+int compare_term(uint16_t term, uint16_t base_term);
 
 /* DATA HANDLERS */
 int handle_data(long msg);
@@ -81,8 +82,8 @@ int prepare_address_info(char *address, char *port, struct addrinfo **res);
 int get_socket(struct addrinfo *address_info);
 int send_once(long msg, struct addrinfo *addrinfo, int sock);
 int broadcast_heartbeat();
-int broadcast_election_msg(int term);
-int broadcast_leader_msg(int term, short path_info);
+int broadcast_election_msg(uint16_t term);
+int broadcast_leader_msg(uint16_t term, short path_info);
 
 /* COORDINATION FUNCTIONS */
 int coordination();
