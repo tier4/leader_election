@@ -36,7 +36,6 @@ struct coordination_node
     struct peer_info *peers;
     int term;
     int leader_id;
-    int end_coordination;
     int num_timeouts;
 };
 

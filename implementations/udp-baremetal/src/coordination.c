@@ -23,13 +23,6 @@ struct coordination_node this_node;
 int period;
 int timeout_threshold;
 
-/* SIGNAL HANDLER */
-void sigint_handler() // this allows program to finish cleanly on CTRL-C press
-{
-    printf("Handling SIGINT by ending coordination...\n");
-    this_node.end_coordination = 1;
-}
-
 int get_my_connected_count() {
     int connected_count = 0;
     for (int i = 0; i < this_node.num_nodes; i++) {
@@ -457,9 +450,6 @@ int coordination()
 
     while (1)
     {
-        if (this_node.end_coordination)
-            break;
-
         broadcast_heartbeat();
 
         check_heartbeat_timeout();
@@ -475,19 +465,6 @@ int main(int argc, char **argv)
 {
     // set CPU priority
     // setpriority(PRIO_PROCESS, 0, -20);
-
-    // setup SIGINT handler
-    struct sigaction sigact;
-    int sigact_status;
-
-    memset(&sigact, 0, sizeof(sigact));
-    sigact.sa_handler = sigint_handler;
-
-    if ((sigact_status = sigaction(SIGINT, &sigact, NULL)) != 0)
-    {
-        fprintf(stderr, "Error creating sigaction. Exiting...\n");
-        exit(-1);
-    }
 
     // argv should be [number_of_nodes, node_info_file, my_node_id, period]
     if (argc != 6)
@@ -554,7 +531,6 @@ int main(int argc, char **argv)
     this_node.peers = peers;
     this_node.num_nodes = num_nodes;
     this_node.id = my_id;
-    this_node.end_coordination = 0;
 
     // set term = 0, no disconnected nodes, path accordingly
     this_node.term = 0;
