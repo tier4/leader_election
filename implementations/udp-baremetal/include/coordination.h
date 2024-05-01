@@ -25,7 +25,6 @@ struct peer_info
     int listen_socket;
     int connected;
     unsigned short link_info;
-    int heartbeat_exchanged; // check if initial heartbeat has been exchanged
     int election_status; // TODO: これに応じてheartbeatとして送るメッセージを決める
     int has_voted;
 };

@@ -139,13 +139,11 @@ int handle_heartbeat(long msg)
 {
     int node_id = get_msg_node_id(msg);
 
-    if (this_node.peers[node_id].heartbeat_exchanged && !this_node.peers[node_id].connected) {
+    if (!this_node.peers[node_id].connected) {
         fprintf(stderr, "Error: rejoin\n");
         return -1;
     }
 
-    this_node.peers[node_id].connected = 1;
-    this_node.peers[node_id].heartbeat_exchanged = 1;
     gettimeofday(&this_node.peers[node_id].timeout_start, NULL);
 
     return 0;
@@ -547,7 +545,6 @@ int main(int argc, char **argv)
 
         peers[i].connected = 1;
         peers[i].link_info = 0;
-        peers[i].heartbeat_exchanged = 0;
         peers[i].has_voted = 0;
     }
 
