@@ -493,7 +493,7 @@ int main(int argc, char **argv)
     */
 
     // get this process's node id from command line args
-    int my_id = strtol(argv[3], NULL, 10);
+    this_node.id = strtol(argv[3], NULL, 10);
 
     // get period for sending messages and checking timeout
     // heartbeat timeout threshold is 5 times larger than period
@@ -538,7 +538,6 @@ int main(int argc, char **argv)
     // initialize this_node struct
     this_node.peers = peers;
     this_node.num_nodes = num_nodes;
-    this_node.id = my_id;
 
     // set term = 0, no disconnected nodes, path accordingly
     this_node.term = 0;
