@@ -1,4 +1,6 @@
 
+#include <sys/resource.h>
+
 #include "coordination.h"
 
 // This is a mask for term:
