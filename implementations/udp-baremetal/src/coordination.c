@@ -59,12 +59,12 @@ short get_my_link_info() // get connected nodes information in encoded form
 }
 
 // encode message to follow network protocol
-long encode_msg(unsigned short type, uint16_t node_id, uint16_t term, unsigned short path_or_link_info)
+long encode_msg(uint16_t type, uint16_t node_id, uint16_t term, unsigned short path_or_link_info)
 {
     return (type << 24) | (node_id << 16) | (term << 8) | path_or_link_info;
 }
 
-short get_msg_type(long msg)
+uint16_t get_msg_type(long msg)
 {
     return (msg >> 24) & 0xFF;
 }
@@ -117,7 +117,7 @@ int compare_term(uint16_t term, uint16_t base_term)
 /* DATA HANDLERS */
 int handle_data(long msg)
 {
-    int type = get_msg_type(msg);
+    uint16_t type = get_msg_type(msg);
     switch (type)
     {
     case heartbeat_msg:
