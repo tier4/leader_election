@@ -59,7 +59,7 @@ short get_my_link_info() // get connected nodes information in encoded form
 }
 
 // encode message to follow network protocol
-long encode_msg(unsigned short type, unsigned short node_id, uint16_t term, unsigned short path_or_link_info)
+long encode_msg(unsigned short type, uint16_t node_id, uint16_t term, unsigned short path_or_link_info)
 {
     return (type << 24) | (node_id << 16) | (term << 8) | path_or_link_info;
 }
@@ -69,7 +69,7 @@ short get_msg_type(long msg)
     return (msg >> 24) & 0xFF;
 }
 
-short get_msg_node_id(long msg)
+uint16_t get_msg_node_id(long msg)
 {
     return (msg >> 16) & 0xFF;
 }
@@ -136,7 +136,7 @@ int handle_data(long msg)
 
 int handle_heartbeat(long msg)
 {
-    int node_id = get_msg_node_id(msg);
+    uint16_t node_id = get_msg_node_id(msg);
 
     if (!this_node.peers[node_id].connected) {
         fprintf(stderr, "Error: rejoin\n");
@@ -151,7 +151,7 @@ int handle_heartbeat(long msg)
 int handle_election_msg(long msg)
 {
     uint16_t term = get_msg_term(msg);
-    int node_id = get_msg_node_id(msg);
+    uint16_t node_id = get_msg_node_id(msg);
     int connected_count = get_msg_connected_count(msg);
 
     if (compare_term(term, this_node.term) == 1) // we are in old term, so update term and start our own election
@@ -183,7 +183,7 @@ int handle_election_msg(long msg)
 int handle_election_reply(long msg)
 {
     uint16_t term = get_msg_term(msg);
-    int node_id = get_msg_node_id(msg);
+    uint16_t node_id = get_msg_node_id(msg);
 
     if (compare_term(term, this_node.term) == -1) {
         // throw away old replies
@@ -527,7 +527,7 @@ int main(int argc, char **argv)
         char listen_addr[16];
         char port[16];
 
-        if ((fscanf(node_info_file, "%d %15s %15s %15s", &peers[i].id, send_addr, listen_addr, port)) != 4)
+        if ((fscanf(node_info_file, "%hd %15s %15s %15s", &peers[i].id, send_addr, listen_addr, port)) != 4)
         {
             fprintf(stderr, "Error reading node info file\n");
             fclose(node_info_file);

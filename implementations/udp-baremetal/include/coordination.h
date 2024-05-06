@@ -18,7 +18,7 @@ struct path
 
 struct peer_info
 {
-    int id;
+    uint16_t id;
     struct timeval timeout_start;
     struct addrinfo *send_addrinfo;
     struct addrinfo *listen_addrinfo;
@@ -32,11 +32,11 @@ struct peer_info
 
 struct coordination_node
 {
-    int id;
+    uint16_t id;
     int num_nodes;
     struct peer_info *peers;
     uint16_t term;
-    int leader_id;
+    uint16_t leader_id;
     int period;
     int timeout_threshold;
 };
@@ -62,9 +62,9 @@ int get_my_connected_count();
 double get_elapsed_time_ms(struct timeval start);
 int free_peer_info();
 short get_my_link_info();
-long encode_msg(unsigned short type, unsigned short node_id, uint16_t term, unsigned short path_or_link_info);
+long encode_msg(unsigned short type, uint16_t node_id, uint16_t term, unsigned short path_or_link_info);
 short get_msg_type(long msg);
-short get_msg_node_id(long msg);
+uint16_t get_msg_node_id(long msg);
 uint16_t get_msg_term(long msg);
 short get_msg_path_info(long msg);
 short get_msg_link_info(long msg);
