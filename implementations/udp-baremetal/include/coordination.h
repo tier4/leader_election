@@ -25,7 +25,7 @@ struct peer_info
     int send_socket;
     int listen_socket;
     int connected;
-    unsigned short link_info;
+    uint16_t link_info;
     int election_status; // TODO: これに応じてheartbeatとして送るメッセージを決める
     int has_voted;
 };
@@ -61,13 +61,13 @@ enum election_status
 int get_my_connected_count();
 double get_elapsed_time_ms(struct timeval start);
 int free_peer_info();
-short get_my_link_info();
-long encode_msg(uint16_t type, uint16_t node_id, uint16_t term, unsigned short path_or_link_info);
+uint16_t get_my_link_info();
+long encode_msg(uint16_t type, uint16_t node_id, uint16_t term, uint16_t path_or_link_info);
 uint16_t get_msg_type(long msg);
 uint16_t get_msg_node_id(long msg);
 uint16_t get_msg_term(long msg);
-short get_msg_path_info(long msg);
-short get_msg_link_info(long msg);
+uint16_t get_msg_path_info(long msg);
+uint16_t get_msg_link_info(long msg);
 int get_msg_connected_count(long msg);
 int compare_term(uint16_t term, uint16_t base_term);
 

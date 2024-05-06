@@ -43,9 +43,9 @@ int free_peer_info()
     return 0;
 }
 
-short get_my_link_info() // get connected nodes information in encoded form
+uint16_t get_my_link_info() // get connected nodes information in encoded form
 {
-    short link_info = 0;
+    uint16_t link_info = 0;
     for (int i = 0; i < this_node.num_nodes; i++)
     {
         if (this_node.peers[i].id == this_node.id)
@@ -59,7 +59,7 @@ short get_my_link_info() // get connected nodes information in encoded form
 }
 
 // encode message to follow network protocol
-long encode_msg(uint16_t type, uint16_t node_id, uint16_t term, unsigned short path_or_link_info)
+long encode_msg(uint16_t type, uint16_t node_id, uint16_t term, uint16_t path_or_link_info)
 {
     return (type << 24) | (node_id << 16) | (term << 8) | path_or_link_info;
 }
@@ -79,19 +79,19 @@ uint16_t get_msg_term(long msg)
     return (msg >> 8) & 0xFF;
 }
 
-short get_msg_path_info(long msg)
+uint16_t get_msg_path_info(long msg)
 {
     return msg & 0xFF;
 }
 
-short get_msg_link_info(long msg)
+uint16_t get_msg_link_info(long msg)
 {
     return msg & 0xFF;
 }
 
 int get_msg_connected_count(long msg)
 {
-    unsigned short link_info = get_msg_link_info(msg);
+    uint16_t link_info = get_msg_link_info(msg);
     int connected_count;
     for (connected_count = 0; link_info != 0; link_info = link_info >> 1)
     {
@@ -309,7 +309,7 @@ int path_is_valid(struct path p) // path should be pair of node ids
     }
 
     // make sure both nodes believe they are connected to each other
-    short link_info1 = this_node.peers[p.node1].link_info;
+    uint16_t link_info1 = this_node.peers[p.node1].link_info;
 
     int offset = (this_node.num_nodes - 1) - p.node2; // e.g. num_nodes = 3, node2 = 1, offset = 1
 
