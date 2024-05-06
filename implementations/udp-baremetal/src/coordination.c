@@ -59,37 +59,37 @@ uint16_t get_my_link_info() // get connected nodes information in encoded form
 }
 
 // encode message to follow network protocol
-long encode_msg(uint16_t type, uint16_t node_id, uint16_t term, uint16_t path_or_link_info)
+uint64_t encode_msg(uint16_t type, uint16_t node_id, uint16_t term, uint16_t path_or_link_info)
 {
     return (type << 24) | (node_id << 16) | (term << 8) | path_or_link_info;
 }
 
-uint16_t get_msg_type(long msg)
+uint16_t get_msg_type(uint64_t msg)
 {
     return (msg >> 24) & 0xFF;
 }
 
-uint16_t get_msg_node_id(long msg)
+uint16_t get_msg_node_id(uint64_t msg)
 {
     return (msg >> 16) & 0xFF;
 }
 
-uint16_t get_msg_term(long msg)
+uint16_t get_msg_term(uint64_t msg)
 {
     return (msg >> 8) & 0xFF;
 }
 
-uint16_t get_msg_path_info(long msg)
+uint16_t get_msg_path_info(uint64_t msg)
 {
     return msg & 0xFF;
 }
 
-uint16_t get_msg_link_info(long msg)
+uint16_t get_msg_link_info(uint64_t msg)
 {
     return msg & 0xFF;
 }
 
-int get_msg_connected_count(long msg)
+int get_msg_connected_count(uint64_t msg)
 {
     uint16_t link_info = get_msg_link_info(msg);
     int connected_count;
@@ -115,7 +115,7 @@ int compare_term(uint16_t term, uint16_t base_term)
 }
 
 /* DATA HANDLERS */
-int handle_data(long msg)
+int handle_data(uint64_t msg)
 {
     uint16_t type = get_msg_type(msg);
     switch (type)
@@ -134,7 +134,7 @@ int handle_data(long msg)
     return -1;
 }
 
-int handle_heartbeat(long msg)
+int handle_heartbeat(uint64_t msg)
 {
     uint16_t node_id = get_msg_node_id(msg);
 
@@ -148,7 +148,7 @@ int handle_heartbeat(long msg)
     return 0;
 }
 
-int handle_election_msg(long msg)
+int handle_election_msg(uint64_t msg)
 {
     uint16_t term = get_msg_term(msg);
     uint16_t node_id = get_msg_node_id(msg);
@@ -169,7 +169,7 @@ int handle_election_msg(long msg)
         if (connected_count > get_my_connected_count() || (connected_count == get_my_connected_count() && node_id < this_node.id))
         {
             // give vote (reply OK message)
-            long msg = encode_msg(election_reply_msg, this_node.id, term, get_my_link_info());
+            uint64_t msg = encode_msg(election_reply_msg, this_node.id, term, get_my_link_info());
             send_once(msg, this_node.peers[node_id].send_addrinfo, this_node.peers[node_id].send_socket);
         }
         // else don't give vote (ignore msg)
@@ -180,7 +180,7 @@ int handle_election_msg(long msg)
     return 0;
 }
 
-int handle_election_reply(long msg)
+int handle_election_reply(uint64_t msg)
 {
     uint16_t term = get_msg_term(msg);
     uint16_t node_id = get_msg_node_id(msg);
@@ -223,7 +223,7 @@ int handle_election_reply(long msg)
     return 0;
 }
 
-int handle_leader_msg(long msg)
+int handle_leader_msg(uint64_t msg)
 {
     uint16_t term = get_msg_term(msg);
 
@@ -341,10 +341,10 @@ int initialize_socket()
     return 0;
 }
 
-int send_once(long msg, struct addrinfo *addrinfo, int sock) // helper function for msg sending
+int send_once(uint64_t msg, struct addrinfo *addrinfo, int sock) // helper function for msg sending
 {
     int bytes_sent;
-    if ((bytes_sent = sendto(sock, &msg, sizeof(long), 0, addrinfo->ai_addr, addrinfo->ai_addrlen)) == -1)
+    if ((bytes_sent = sendto(sock, &msg, sizeof(uint64_t), 0, addrinfo->ai_addr, addrinfo->ai_addrlen)) == -1)
     {
         fprintf(stderr, "Error with sending data\n");
         return -1;
@@ -352,7 +352,7 @@ int send_once(long msg, struct addrinfo *addrinfo, int sock) // helper function 
     return 0;
 }
 
-int broadcast(long msg)
+int broadcast(uint64_t msg)
 {
     for (int i = 0; i < this_node.num_nodes; i++)
     {
@@ -367,21 +367,21 @@ int broadcast(long msg)
 
 int broadcast_heartbeat()
 {
-    long msg = encode_msg(heartbeat_msg, this_node.id, 0, 0);
+    uint64_t msg = encode_msg(heartbeat_msg, this_node.id, 0, 0);
     broadcast(msg);
     return 0;
 }
 
 int broadcast_election_msg(uint16_t term)
 {
-    long msg = encode_msg(election_msg, this_node.id, term, get_my_link_info());
+    uint64_t msg = encode_msg(election_msg, this_node.id, term, get_my_link_info());
     broadcast(msg);
     return 0;
 }
 
 int broadcast_leader_msg(uint16_t term, short path_info)
 {
-    long msg = encode_msg(leader_msg, this_node.id, term, path_info);
+    uint64_t msg = encode_msg(leader_msg, this_node.id, term, path_info);
     broadcast(msg);
     return 0;
 }
@@ -436,7 +436,7 @@ int check_messages()
         if (this_node.peers[i].id == this_node.id)
             continue;
 
-        long recv_buf;
+        uint64_t recv_buf;
         if (recvfrom(this_node.peers[i].listen_socket, &recv_buf, recv_buf_size, 0, (struct sockaddr *)&from, &fromlen) > 0)
         {
             if (handle_data(recv_buf) < 0) {

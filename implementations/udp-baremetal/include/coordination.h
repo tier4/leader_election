@@ -62,26 +62,26 @@ int get_my_connected_count();
 double get_elapsed_time_ms(struct timeval start);
 int free_peer_info();
 uint16_t get_my_link_info();
-long encode_msg(uint16_t type, uint16_t node_id, uint16_t term, uint16_t path_or_link_info);
-uint16_t get_msg_type(long msg);
-uint16_t get_msg_node_id(long msg);
-uint16_t get_msg_term(long msg);
-uint16_t get_msg_path_info(long msg);
-uint16_t get_msg_link_info(long msg);
-int get_msg_connected_count(long msg);
+uint64_t encode_msg(uint16_t type, uint16_t node_id, uint16_t term, uint16_t path_or_link_info);
+uint16_t get_msg_type(uint64_t msg);
+uint16_t get_msg_node_id(uint64_t msg);
+uint16_t get_msg_term(uint64_t msg);
+uint16_t get_msg_path_info(uint64_t msg);
+uint16_t get_msg_link_info(uint64_t msg);
+int get_msg_connected_count(uint64_t msg);
 int compare_term(uint16_t term, uint16_t base_term);
 
 /* DATA HANDLERS */
-int handle_data(long msg);
-int handle_heartbeat(long msg);
-int handle_election_msg(long msg);
-int handle_election_reply(long msg);
-int handle_leader_msg(long msg);
+int handle_data(uint64_t msg);
+int handle_heartbeat(uint64_t msg);
+int handle_election_msg(uint64_t msg);
+int handle_election_reply(uint64_t msg);
+int handle_leader_msg(uint64_t msg);
 
 /* NETWORK FUNCTIONS */
 int prepare_address_info(char *address, char *port, struct addrinfo **res);
 int get_socket(struct addrinfo *address_info);
-int send_once(long msg, struct addrinfo *addrinfo, int sock);
+int send_once(uint64_t msg, struct addrinfo *addrinfo, int sock);
 int broadcast_heartbeat();
 int broadcast_election_msg(uint16_t term);
 int broadcast_leader_msg(uint16_t term, short path_info);
