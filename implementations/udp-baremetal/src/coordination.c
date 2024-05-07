@@ -16,9 +16,9 @@ struct path paths[NUM_PATHS] = {{0, 2}, {0, 3}, {1, 2}, {1, 3}};
 /* GLOBAL DATA */
 struct coordination_node this_node;
 
-int get_my_connected_count() {
-    int connected_count = 0;
-    for (int i = 0; i < this_node.num_nodes; i++) {
+uint8_t get_my_connected_count() {
+    uint8_t connected_count = 0;
+    for (uint8_t i = 0; i < this_node.num_nodes; i++) {
         if (this_node.peers[i].connected) {
             connected_count++;
         }
@@ -46,7 +46,7 @@ int free_peer_info()
 uint8_t get_my_link_info() // get connected nodes information in encoded form
 {
     uint8_t link_info = 0;
-    for (int i = 0; i < this_node.num_nodes; i++)
+    for (uint8_t i = 0; i < this_node.num_nodes; i++)
     {
         if (this_node.peers[i].id == this_node.id)
             link_info = (link_info << 1) + 1; // link info includes self as connected
@@ -89,11 +89,11 @@ uint8_t get_msg_link_info(uint64_t msg)
     return msg & 0xFF;
 }
 
-int get_msg_connected_count(uint64_t msg)
+uint8_t get_msg_connected_count(uint64_t msg)
 {
     uint8_t link_info = get_msg_link_info(msg);
-    int connected_count;
-    for (connected_count = 0; link_info != 0; link_info = link_info >> 1)
+    uint8_t connected_count = 0;
+    for (; link_info != 0; link_info = link_info >> 1)
     {
         if ((link_info & 0b1) == 1)
             connected_count += 1;
@@ -104,13 +104,11 @@ int get_msg_connected_count(uint64_t msg)
 int compare_term(uint8_t term, uint8_t base_term)
 {
     if (term == base_term) {
-        return 0;
-    }
-
-    if (((term + MASK + 1 - base_term) & MASK) < MASK / 2) {
+        return 0; // terms are the same
+    } else if (((term + MASK + 1 - base_term) & MASK) < MASK / 2) {
         return 1; // term is larger than base_term
     } else {
-        return -1;// term is smaller than base_term
+        return -1; // term is smaller than base_term
     }
 }
 
@@ -152,13 +150,13 @@ int handle_election_msg(uint64_t msg)
 {
     uint8_t term = get_msg_term(msg);
     uint8_t node_id = get_msg_node_id(msg);
-    int connected_count = get_msg_connected_count(msg);
+    uint8_t connected_count = get_msg_connected_count(msg);
 
     if (compare_term(term, this_node.term) == 1) // we are in old term, so update term and start our own election
     {
         // atomically change term and votes received
         this_node.term = term;
-        for (int i = 0; i < this_node.num_nodes; i++) {
+        for (uint8_t i = 0; i < this_node.num_nodes; i++) {
             this_node.peers[i].has_voted = 0;
         }
         begin_election();
@@ -198,8 +196,8 @@ int handle_election_reply(uint64_t msg)
     this_node.peers[node_id].has_voted = 1;
 
     // count votes
-    int votes_count = 0;
-    for (int i = 0; i < this_node.num_nodes; i++) {
+    uint8_t votes_count = 0;
+    for (uint8_t i = 0; i < this_node.num_nodes; i++) {
         if (this_node.peers[i].has_voted == 1) {
             votes_count++;
         }
@@ -274,7 +272,7 @@ int get_socket(struct addrinfo *address_info)
 uint8_t path_struct_to_uint8_t(struct path p) // helper function to encode path information
 {
     uint8_t res = 0;
-    for (int i = 0; i < this_node.num_nodes; i++)
+    for (uint8_t i = 0; i < this_node.num_nodes; i++)
     {
         if (i == p.node1 || i == p.node2)
             res = (res << 1) + 1;
@@ -288,7 +286,7 @@ uint8_t path_struct_to_uint8_t(struct path p) // helper function to encode path 
 uint8_t get_best_path() // use global paths[] (ordered by priority, hardcoded value)
 {
     // just check paths in order of priority, return first valid one
-    for (int i = 0; i < NUM_PATHS; i++)
+    for (uint8_t i = 0; i < NUM_PATHS; i++)
     {
         if (path_is_valid(paths[i]))
             return path_struct_to_uint8_t(paths[i]);
@@ -318,7 +316,7 @@ int path_is_valid(struct path p) // path should be pair of node ids
 
 int initialize_socket()
 {
-    for (int i = 0; i < this_node.num_nodes; i++)
+    for (uint8_t i = 0; i < this_node.num_nodes; i++)
     {
         if (i == this_node.id)
             continue;
@@ -354,7 +352,7 @@ int send_once(uint64_t msg, struct addrinfo *addrinfo, int sock) // helper funct
 
 int broadcast(uint64_t msg)
 {
-    for (int i = 0; i < this_node.num_nodes; i++)
+    for (uint8_t i = 0; i < this_node.num_nodes; i++)
     {
         if (this_node.peers[i].id == this_node.id) // don't send message to oneself
             continue;
@@ -396,7 +394,7 @@ int begin_election()
 int heartbeat_timeout_handler()
 {
     this_node.term = (this_node.term + 1) & MASK;
-    for (int i = 0; i < this_node.num_nodes; i++) {
+    for (uint8_t i = 0; i < this_node.num_nodes; i++) {
         this_node.peers[i].has_voted = 0;
     }
 
@@ -408,7 +406,7 @@ int heartbeat_timeout_handler()
 
 int check_heartbeat_timeout()
 {
-    for (int i = 0; i < this_node.num_nodes; i++)
+    for (uint8_t i = 0; i < this_node.num_nodes; i++)
     {
         if (this_node.peers[i].id == this_node.id)
             continue;
@@ -430,8 +428,8 @@ int check_messages()
     socklen_t fromlen = sizeof(from);
     memset(&from, 0, sizeof(from));
 
-    int recv_buf_size = 64; // big enough for our network protocols messages
-    for (int i = 0; i < this_node.num_nodes; i++)
+    uint8_t recv_buf_size = 64; // big enough for our network protocols messages
+    for (uint8_t i = 0; i < this_node.num_nodes; i++)
     {
         if (this_node.peers[i].id == this_node.id)
             continue;
@@ -521,7 +519,7 @@ int main(int argc, char **argv)
 
     // fill peer info
     struct peer_info peers[this_node.num_nodes];
-    for (int i = 0; i < this_node.num_nodes; i++)
+    for (uint8_t i = 0; i < this_node.num_nodes; i++)
     {
         char send_addr[16];
         char listen_addr[16];

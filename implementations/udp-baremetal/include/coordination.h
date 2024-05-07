@@ -12,8 +12,8 @@
 /* STRUCTS */
 struct path
 {
-    int node1;
-    int node2;
+    uint8_t node1;
+    uint8_t node2;
 };
 
 struct peer_info
@@ -24,7 +24,7 @@ struct peer_info
     struct addrinfo *listen_addrinfo;
     int send_socket;
     int listen_socket;
-    int connected;
+    uint8_t connected;
     uint8_t link_info;
     int has_voted;
 };
@@ -32,7 +32,7 @@ struct peer_info
 struct coordination_node
 {
     uint8_t id;
-    int num_nodes;
+    uint8_t num_nodes;
     struct peer_info *peers;
     uint8_t term;
     uint8_t leader_id;
@@ -49,7 +49,7 @@ enum msg_type
 };
 
 /* UTILS*/
-int get_my_connected_count();
+uint8_t get_my_connected_count();
 double get_elapsed_time_ms(struct timeval start);
 int free_peer_info();
 uint8_t get_my_link_info();
@@ -59,7 +59,7 @@ uint8_t get_msg_node_id(uint64_t msg);
 uint8_t get_msg_term(uint64_t msg);
 uint8_t get_msg_path_info(uint64_t msg);
 uint8_t get_msg_link_info(uint64_t msg);
-int get_msg_connected_count(uint64_t msg);
+uint8_t get_msg_connected_count(uint64_t msg);
 int compare_term(uint8_t term, uint8_t base_term);
 
 /* DATA HANDLERS */
