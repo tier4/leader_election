@@ -26,7 +26,6 @@ struct peer_info
     int listen_socket;
     int connected;
     uint8_t link_info;
-    int election_status; // TODO: これに応じてheartbeatとして送るメッセージを決める
     int has_voted;
 };
 
@@ -47,14 +46,6 @@ enum msg_type
     election_msg,
     election_reply_msg,
     leader_msg
-};
-
-enum election_status
-{
-    sending_heartbeat,
-    sending_election_msg,
-    sending_ok_msg,
-    sending_leader_msg,
 };
 
 /* UTILS*/
