@@ -48,7 +48,6 @@ enum msg_type
     leader_msg
 };
 
-/* UTILS*/
 uint8_t get_my_connected_count();
 double get_elapsed_time_ms(struct timeval start);
 int free_peer_info();
@@ -61,23 +60,17 @@ uint8_t get_msg_path_info(uint64_t msg);
 uint8_t get_msg_link_info(uint64_t msg);
 uint8_t get_msg_connected_count(uint64_t msg);
 int compare_term(uint8_t term, uint8_t base_term);
-
-/* DATA HANDLERS */
 int handle_data(uint64_t msg);
 int handle_heartbeat(uint64_t msg);
 int handle_election_msg(uint64_t msg);
 int handle_election_reply(uint64_t msg);
 int handle_leader_msg(uint64_t msg);
-
-/* NETWORK FUNCTIONS */
 int prepare_address_info(char *address, char *port, struct addrinfo **res);
 int get_socket(struct addrinfo *address_info);
 int send_once(uint64_t msg, struct addrinfo *addrinfo, int sock);
 int broadcast_heartbeat();
 int broadcast_election_msg(uint8_t term);
 int broadcast_leader_msg(uint8_t term, uint8_t path_info);
-
-/* COORDINATION FUNCTIONS */
 int coordination();
 int heartbeat_timeout_handler();
 int begin_election();
