@@ -9,6 +9,22 @@
 #include <sys/time.h>
 #include <stdint.h>
 
+enum msg_type
+{
+    heartbeat_msg,
+    election_msg,
+    election_reply_msg,
+    leader_msg
+};
+
+enum election_phase
+{
+    sending_heartbeat,
+    sending_election_msg,
+    sending_reply_msg,
+    sending_leader_msg
+};
+
 /* STRUCTS */
 struct path
 {
@@ -40,22 +56,6 @@ struct coordination_node
     int timeout_threshold;
     struct peer_info *peers;
 };
-
-enum msg_type
-{
-    heartbeat_msg,
-    election_msg,
-    election_reply_msg,
-    leader_msg
-};
-
-enum election_phase
-{
-    sending_heartbeat,
-    sending_election_msg,
-    sending_reply_msg,
-    sending_leader_msg
-}
 
 uint8_t get_my_connected_count();
 double get_elapsed_time_ms(struct timeval start);

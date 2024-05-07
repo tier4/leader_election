@@ -109,6 +109,16 @@ int compare_term(uint8_t term, uint8_t base_term)
     }
 }
 
+void update_timestamp(uint8_t node_id)
+{
+    if (!this_node.peers[node_id].connected) {
+        fprintf(stderr, "Error: rejoin\n");
+        exit(1);
+    }
+
+    gettimeofday(&this_node.peers[node_id].timeout_start, NULL);
+}
+
 int handle_data(uint64_t msg)
 {
     uint8_t type = get_msg_type(msg);
@@ -130,13 +140,7 @@ int handle_data(uint64_t msg)
 int handle_heartbeat(uint64_t msg)
 {
     uint8_t node_id = get_msg_node_id(msg);
-
-    if (!this_node.peers[node_id].connected) {
-        fprintf(stderr, "Error: rejoin\n");
-        return -1;
-    }
-
-    gettimeofday(&this_node.peers[node_id].timeout_start, NULL);
+    update_timestamp(node_id);
 
     return 0;
 }
@@ -147,21 +151,22 @@ int handle_election_msg(uint64_t msg)
     uint8_t node_id = get_msg_node_id(msg);
     uint8_t connected_count = get_msg_connected_count(msg);
 
+    update_timestamp(node_id);
+
     if (compare_term(term, this_node.term) == 1) { // we are in old term, so update term and start our own election
         // atomically change term and votes received
         this_node.term = term;
         for (uint8_t i = 0; i < this_node.num_nodes; i++) {
             this_node.peers[i].has_voted = 0;
+            this_node.peers[i].phase = sending_election_msg;
         }
-        begin_election();
     }
     
     if (compare_term(term, this_node.term) == 0) {
         if (connected_count > get_my_connected_count() || (connected_count == get_my_connected_count() && node_id < this_node.id))
         {
             // give vote (reply OK message)
-            uint64_t msg = encode_msg(election_reply_msg, this_node.id, term, get_my_link_info());
-            send_once(msg, this_node.peers[node_id].send_addrinfo, this_node.peers[node_id].send_socket);
+            this_node.peers[node_id].phase = sending_reply_msg;
         }
         // else don't give vote (ignore msg)
     }
@@ -175,6 +180,8 @@ int handle_election_reply(uint64_t msg)
 {
     uint8_t term = get_msg_term(msg);
     uint8_t node_id = get_msg_node_id(msg);
+
+    update_timestamp(node_id);
 
     if (compare_term(term, this_node.term) == -1) {
         // throw away old replies
@@ -206,7 +213,9 @@ int handle_election_reply(uint64_t msg)
             exit(1);
         }
 
-        broadcast_leader_msg(term, path_info);
+        for (uint8_t i = 0; i < this_node.num_nodes; i++) {
+            this_node.peers[i].phase = sending_leader_msg;
+        }
     }
 
     return 0;
@@ -215,6 +224,9 @@ int handle_election_reply(uint64_t msg)
 int handle_leader_msg(uint64_t msg)
 {
     uint8_t term = get_msg_term(msg);
+    uint8_t node_id = get_msg_node_id(msg);
+
+    update_timestamp(node_id);
 
     if (compare_term(term, this_node.term) == -1) {
         // throw away old leader messages
@@ -224,7 +236,10 @@ int handle_leader_msg(uint64_t msg)
         return -1;
     }
 
-    this_node.leader_id = get_msg_node_id(msg);
+    this_node.leader_id = node_id;
+
+    for (uint8_t i = 0; i < this_node.num_nodes; i++)
+        this_node.peers[i].phase = sending_heartbeat;
 
     return 0;
 }
@@ -332,22 +347,13 @@ int send_once(uint64_t msg, struct addrinfo *addrinfo, int sock) // helper funct
     return 0;
 }
 
-int begin_election()
-{
-    uint8_t term = this_node.term;
-    broadcast_election_msg(term);
-    return 0;
-}
-
 int heartbeat_timeout_handler()
 {
     this_node.term = (this_node.term + 1) & MASK;
     for (uint8_t i = 0; i < this_node.num_nodes; i++) {
         this_node.peers[i].has_voted = 0;
+        this_node.peers[i].phase = sending_election_msg;
     }
-
-    // start election
-    begin_election();
 
     return 0;
 }
@@ -437,8 +443,6 @@ int coordination()
     while (1) {
         struct timeval start_time;
         gettimeofday(&start_time, NULL);
-
-        // broadcast_heartbeat();
 
         check_heartbeat_timeout();
 
