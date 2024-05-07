@@ -35,7 +35,7 @@ double get_elapsed_time_ms(struct timeval start)
 
 int free_peer_info()
 {
-    for (int i = 0; i < this_node.num_nodes; i++)
+    for (uint8_t i = 0; i < this_node.num_nodes; i++)
     {
         freeaddrinfo(this_node.peers[i].send_addrinfo);
         freeaddrinfo(this_node.peers[i].listen_addrinfo);
@@ -309,7 +309,7 @@ int path_is_valid(struct path p) // path should be pair of node ids
     // make sure both nodes believe they are connected to each other
     uint8_t link_info1 = this_node.peers[p.node1].link_info;
 
-    int offset = (this_node.num_nodes - 1) - p.node2; // e.g. num_nodes = 3, node2 = 1, offset = 1
+    uint8_t offset = (this_node.num_nodes - 1) - p.node2; // e.g. num_nodes = 3, node2 = 1, offset = 1
 
     return (link_info1 >> offset) && 0x01;
 }
