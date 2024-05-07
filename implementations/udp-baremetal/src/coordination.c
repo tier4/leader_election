@@ -43,9 +43,9 @@ int free_peer_info()
     return 0;
 }
 
-uint16_t get_my_link_info() // get connected nodes information in encoded form
+uint8_t get_my_link_info() // get connected nodes information in encoded form
 {
-    uint16_t link_info = 0;
+    uint8_t link_info = 0;
     for (int i = 0; i < this_node.num_nodes; i++)
     {
         if (this_node.peers[i].id == this_node.id)
@@ -59,39 +59,39 @@ uint16_t get_my_link_info() // get connected nodes information in encoded form
 }
 
 // encode message to follow network protocol
-uint64_t encode_msg(uint16_t type, uint16_t node_id, uint16_t term, uint16_t path_or_link_info)
+uint64_t encode_msg(uint8_t type, uint8_t node_id, uint8_t term, uint8_t path_or_link_info)
 {
     return (type << 24) | (node_id << 16) | (term << 8) | path_or_link_info;
 }
 
-uint16_t get_msg_type(uint64_t msg)
+uint8_t get_msg_type(uint64_t msg)
 {
     return (msg >> 24) & 0xFF;
 }
 
-uint16_t get_msg_node_id(uint64_t msg)
+uint8_t get_msg_node_id(uint64_t msg)
 {
     return (msg >> 16) & 0xFF;
 }
 
-uint16_t get_msg_term(uint64_t msg)
+uint8_t get_msg_term(uint64_t msg)
 {
     return (msg >> 8) & 0xFF;
 }
 
-uint16_t get_msg_path_info(uint64_t msg)
+uint8_t get_msg_path_info(uint64_t msg)
 {
     return msg & 0xFF;
 }
 
-uint16_t get_msg_link_info(uint64_t msg)
+uint8_t get_msg_link_info(uint64_t msg)
 {
     return msg & 0xFF;
 }
 
 int get_msg_connected_count(uint64_t msg)
 {
-    uint16_t link_info = get_msg_link_info(msg);
+    uint8_t link_info = get_msg_link_info(msg);
     int connected_count;
     for (connected_count = 0; link_info != 0; link_info = link_info >> 1)
     {
@@ -101,7 +101,7 @@ int get_msg_connected_count(uint64_t msg)
     return connected_count - 1; // subtract one to exclude self
 }
 
-int compare_term(uint16_t term, uint16_t base_term)
+int compare_term(uint8_t term, uint8_t base_term)
 {
     if (term == base_term) {
         return 0;
@@ -117,7 +117,7 @@ int compare_term(uint16_t term, uint16_t base_term)
 /* DATA HANDLERS */
 int handle_data(uint64_t msg)
 {
-    uint16_t type = get_msg_type(msg);
+    uint8_t type = get_msg_type(msg);
     switch (type)
     {
     case heartbeat_msg:
@@ -136,7 +136,7 @@ int handle_data(uint64_t msg)
 
 int handle_heartbeat(uint64_t msg)
 {
-    uint16_t node_id = get_msg_node_id(msg);
+    uint8_t node_id = get_msg_node_id(msg);
 
     if (!this_node.peers[node_id].connected) {
         fprintf(stderr, "Error: rejoin\n");
@@ -150,8 +150,8 @@ int handle_heartbeat(uint64_t msg)
 
 int handle_election_msg(uint64_t msg)
 {
-    uint16_t term = get_msg_term(msg);
-    uint16_t node_id = get_msg_node_id(msg);
+    uint8_t term = get_msg_term(msg);
+    uint8_t node_id = get_msg_node_id(msg);
     int connected_count = get_msg_connected_count(msg);
 
     if (compare_term(term, this_node.term) == 1) // we are in old term, so update term and start our own election
@@ -182,8 +182,8 @@ int handle_election_msg(uint64_t msg)
 
 int handle_election_reply(uint64_t msg)
 {
-    uint16_t term = get_msg_term(msg);
-    uint16_t node_id = get_msg_node_id(msg);
+    uint8_t term = get_msg_term(msg);
+    uint8_t node_id = get_msg_node_id(msg);
 
     if (compare_term(term, this_node.term) == -1) {
         // throw away old replies
@@ -225,7 +225,7 @@ int handle_election_reply(uint64_t msg)
 
 int handle_leader_msg(uint64_t msg)
 {
-    uint16_t term = get_msg_term(msg);
+    uint8_t term = get_msg_term(msg);
 
     if (compare_term(term, this_node.term) == -1) {
         // throw away old leader messages
@@ -309,7 +309,7 @@ int path_is_valid(struct path p) // path should be pair of node ids
     }
 
     // make sure both nodes believe they are connected to each other
-    uint16_t link_info1 = this_node.peers[p.node1].link_info;
+    uint8_t link_info1 = this_node.peers[p.node1].link_info;
 
     int offset = (this_node.num_nodes - 1) - p.node2; // e.g. num_nodes = 3, node2 = 1, offset = 1
 
@@ -372,14 +372,14 @@ int broadcast_heartbeat()
     return 0;
 }
 
-int broadcast_election_msg(uint16_t term)
+int broadcast_election_msg(uint8_t term)
 {
     uint64_t msg = encode_msg(election_msg, this_node.id, term, get_my_link_info());
     broadcast(msg);
     return 0;
 }
 
-int broadcast_leader_msg(uint16_t term, short path_info)
+int broadcast_leader_msg(uint8_t term, short path_info)
 {
     uint64_t msg = encode_msg(leader_msg, this_node.id, term, path_info);
     broadcast(msg);
@@ -388,7 +388,7 @@ int broadcast_leader_msg(uint16_t term, short path_info)
 
 int begin_election()
 {
-    uint16_t term = this_node.term;
+    uint8_t term = this_node.term;
     broadcast_election_msg(term);
     return 0;
 }
@@ -527,7 +527,7 @@ int main(int argc, char **argv)
         char listen_addr[16];
         char port[16];
 
-        if ((fscanf(node_info_file, "%hd %15s %15s %15s", &peers[i].id, send_addr, listen_addr, port)) != 4)
+        if ((fscanf(node_info_file, "%hhd %15s %15s %15s", &peers[i].id, send_addr, listen_addr, port)) != 4)
         {
             fprintf(stderr, "Error reading node info file\n");
             fclose(node_info_file);

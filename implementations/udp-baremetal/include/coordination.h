@@ -18,25 +18,25 @@ struct path
 
 struct peer_info
 {
-    uint16_t id;
+    uint8_t id;
     struct timeval timeout_start;
     struct addrinfo *send_addrinfo;
     struct addrinfo *listen_addrinfo;
     int send_socket;
     int listen_socket;
     int connected;
-    uint16_t link_info;
+    uint8_t link_info;
     int election_status; // TODO: これに応じてheartbeatとして送るメッセージを決める
     int has_voted;
 };
 
 struct coordination_node
 {
-    uint16_t id;
+    uint8_t id;
     int num_nodes;
     struct peer_info *peers;
-    uint16_t term;
-    uint16_t leader_id;
+    uint8_t term;
+    uint8_t leader_id;
     int period;
     int timeout_threshold;
 };
@@ -61,15 +61,15 @@ enum election_status
 int get_my_connected_count();
 double get_elapsed_time_ms(struct timeval start);
 int free_peer_info();
-uint16_t get_my_link_info();
-uint64_t encode_msg(uint16_t type, uint16_t node_id, uint16_t term, uint16_t path_or_link_info);
-uint16_t get_msg_type(uint64_t msg);
-uint16_t get_msg_node_id(uint64_t msg);
-uint16_t get_msg_term(uint64_t msg);
-uint16_t get_msg_path_info(uint64_t msg);
-uint16_t get_msg_link_info(uint64_t msg);
+uint8_t get_my_link_info();
+uint64_t encode_msg(uint8_t type, uint8_t node_id, uint8_t term, uint8_t path_or_link_info);
+uint8_t get_msg_type(uint64_t msg);
+uint8_t get_msg_node_id(uint64_t msg);
+uint8_t get_msg_term(uint64_t msg);
+uint8_t get_msg_path_info(uint64_t msg);
+uint8_t get_msg_link_info(uint64_t msg);
 int get_msg_connected_count(uint64_t msg);
-int compare_term(uint16_t term, uint16_t base_term);
+int compare_term(uint8_t term, uint8_t base_term);
 
 /* DATA HANDLERS */
 int handle_data(uint64_t msg);
@@ -83,8 +83,8 @@ int prepare_address_info(char *address, char *port, struct addrinfo **res);
 int get_socket(struct addrinfo *address_info);
 int send_once(uint64_t msg, struct addrinfo *addrinfo, int sock);
 int broadcast_heartbeat();
-int broadcast_election_msg(uint16_t term);
-int broadcast_leader_msg(uint16_t term, short path_info);
+int broadcast_election_msg(uint8_t term);
+int broadcast_leader_msg(uint8_t term, short path_info);
 
 /* COORDINATION FUNCTIONS */
 int coordination();
