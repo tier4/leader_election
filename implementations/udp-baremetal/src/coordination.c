@@ -332,39 +332,6 @@ int send_once(uint64_t msg, struct addrinfo *addrinfo, int sock) // helper funct
     return 0;
 }
 
-int broadcast(uint64_t msg)
-{
-    for (uint8_t i = 0; i < this_node.num_nodes; i++) {
-        if (this_node.peers[i].id == this_node.id) // don't send message to oneself
-            continue;
-
-        send_once(msg, this_node.peers[i].send_addrinfo, this_node.peers[i].send_socket);
-    }
-
-    return 0;
-}
-
-int broadcast_heartbeat()
-{
-    uint64_t msg = encode_msg(heartbeat_msg, this_node.id, 0, 0);
-    broadcast(msg);
-    return 0;
-}
-
-int broadcast_election_msg(uint8_t term)
-{
-    uint64_t msg = encode_msg(election_msg, this_node.id, term, get_my_link_info());
-    broadcast(msg);
-    return 0;
-}
-
-int broadcast_leader_msg(uint8_t term, uint8_t path_info)
-{
-    uint64_t msg = encode_msg(leader_msg, this_node.id, term, path_info);
-    broadcast(msg);
-    return 0;
-}
-
 int begin_election()
 {
     uint8_t term = this_node.term;
@@ -423,6 +390,45 @@ int check_messages()
     return 0;
 }
 
+int send_messages()
+{
+    for (uint8_t i = 0; i < this_node.num_nodes; i++)
+    {
+        if (this_node.peers[i].id == this_node.id)
+            continue;
+
+        uint64_t msg;
+
+        switch (this_node.peers[i].phase)
+        {
+        case sending_heartbeat:
+            msg = encode_msg(heartbeat_msg, this_node.id, 0, 0);
+            break;
+        case sending_election_msg:
+            msg = encode_msg(election_msg, this_node.id, this_node.term, get_my_link_info());
+            break;
+        case sending_reply_msg:
+            msg = encode_msg(election_reply_msg, this_node.id, this_node.term, get_my_link_info());
+            break;
+        case sending_leader_msg:
+            uint8_t path_info = get_best_path();
+            if (path_info == 0) {
+                fprintf(stderr, "NO PATH FOUND!!! Exiting...\n");
+                exit(1);
+            }
+            msg = encode_msg(leader_msg, this_node.id, this_node.term, path_info);
+            break;
+        default:
+            fprintf(stderr, "Error: unrecognized message type received\n");
+            exit(1);
+        }
+
+        send_once(msg, this_node.peers[i].send_addrinfo, this_node.peers[i].send_socket);
+    }
+
+    return 0;
+}
+
 int coordination()
 {
     // initialize socket
@@ -432,12 +438,13 @@ int coordination()
         struct timeval start_time;
         gettimeofday(&start_time, NULL);
 
-        broadcast_heartbeat();
+        // broadcast_heartbeat();
 
         check_heartbeat_timeout();
 
-        if (check_messages() < 0)
-            break;
+        check_messages();
+
+        send_messages();
 
         // sleep until period ms passes
         while (1) {
@@ -508,6 +515,11 @@ int main(int argc, char **argv)
         peers[i].connected = 1;
         peers[i].link_info = 0;
         peers[i].has_voted = 0;
+
+        if (this_node.id == 0)
+            peers[i].phase = sending_leader_msg;
+        else
+            peers[i].phase = sending_heartbeat;
     }
 
     fclose(node_info_file);

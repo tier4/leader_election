@@ -22,6 +22,7 @@ struct peer_info
     uint8_t connected;
     uint8_t link_info;
     uint8_t has_voted;
+    enum election_phase phase;
     int send_socket;
     int listen_socket;
     struct timeval timeout_start;
@@ -48,6 +49,14 @@ enum msg_type
     leader_msg
 };
 
+enum election_phase
+{
+    sending_heartbeat,
+    sending_election_msg,
+    sending_reply_msg,
+    sending_leader_msg
+}
+
 uint8_t get_my_connected_count();
 double get_elapsed_time_ms(struct timeval start);
 int free_peer_info();
@@ -68,9 +77,6 @@ int handle_leader_msg(uint64_t msg);
 int prepare_address_info(char *address, char *port, struct addrinfo **res);
 int get_socket(struct addrinfo *address_info);
 int send_once(uint64_t msg, struct addrinfo *addrinfo, int sock);
-int broadcast_heartbeat();
-int broadcast_election_msg(uint8_t term);
-int broadcast_leader_msg(uint8_t term, uint8_t path_info);
 int coordination();
 int heartbeat_timeout_handler();
 int begin_election();
