@@ -210,7 +210,7 @@ int handle_election_reply(uint64_t msg)
     {
         this_node.leader_id = this_node.id;
 
-        short path_info = get_best_path();
+        uint8_t path_info = get_best_path();
         if (path_info == 0)
         {
             fprintf(stderr, "NO PATH FOUND!!! Exiting...\n");
@@ -271,9 +271,9 @@ int get_socket(struct addrinfo *address_info)
     return sock;
 }
 
-short path_struct_to_short(struct path p) // helper function to encode path information
+uint8_t path_struct_to_uint8_t(struct path p) // helper function to encode path information
 {
-    short res = 0;
+    uint8_t res = 0;
     for (int i = 0; i < this_node.num_nodes; i++)
     {
         if (i == p.node1 || i == p.node2)
@@ -285,13 +285,13 @@ short path_struct_to_short(struct path p) // helper function to encode path info
     return res;
 }
 
-short get_best_path() // use global paths[] (ordered by priority, hardcoded value)
+uint8_t get_best_path() // use global paths[] (ordered by priority, hardcoded value)
 {
     // just check paths in order of priority, return first valid one
     for (int i = 0; i < NUM_PATHS; i++)
     {
         if (path_is_valid(paths[i]))
-            return path_struct_to_short(paths[i]);
+            return path_struct_to_uint8_t(paths[i]);
     }
 
     fprintf(stderr, "NO PATHS AVAILABLE!!!\n");
@@ -379,7 +379,7 @@ int broadcast_election_msg(uint8_t term)
     return 0;
 }
 
-int broadcast_leader_msg(uint8_t term, short path_info)
+int broadcast_leader_msg(uint8_t term, uint8_t path_info)
 {
     uint64_t msg = encode_msg(leader_msg, this_node.id, term, path_info);
     broadcast(msg);

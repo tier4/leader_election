@@ -84,12 +84,12 @@ int get_socket(struct addrinfo *address_info);
 int send_once(uint64_t msg, struct addrinfo *addrinfo, int sock);
 int broadcast_heartbeat();
 int broadcast_election_msg(uint8_t term);
-int broadcast_leader_msg(uint8_t term, short path_info);
+int broadcast_leader_msg(uint8_t term, uint8_t path_info);
 
 /* COORDINATION FUNCTIONS */
 int coordination();
 int heartbeat_timeout_handler();
 int begin_election();
-short path_struct_to_short(struct path p);
-short get_best_path();
+uint8_t path_struct_to_uint8_t(struct path p);
+uint8_t get_best_path();
 int path_is_valid(struct path p);
