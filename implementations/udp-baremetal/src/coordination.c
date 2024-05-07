@@ -435,7 +435,7 @@ int check_messages()
             continue;
 
         uint64_t recv_buf;
-        if (recvfrom(this_node.peers[i].listen_socket, &recv_buf, recv_buf_size, 0, (struct sockaddr *)&from, &fromlen) > 0)
+        while (recvfrom(this_node.peers[i].listen_socket, &recv_buf, recv_buf_size, 0, (struct sockaddr *)&from, &fromlen))
         {
             if (handle_data(recv_buf) < 0) {
                 return -1;
