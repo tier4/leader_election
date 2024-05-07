@@ -19,25 +19,25 @@ struct path
 struct peer_info
 {
     uint8_t id;
+    uint8_t connected;
+    uint8_t link_info;
+    uint8_t has_voted;
+    int send_socket;
+    int listen_socket;
     struct timeval timeout_start;
     struct addrinfo *send_addrinfo;
     struct addrinfo *listen_addrinfo;
-    int send_socket;
-    int listen_socket;
-    uint8_t connected;
-    uint8_t link_info;
-    int has_voted;
 };
 
 struct coordination_node
 {
     uint8_t id;
     uint8_t num_nodes;
-    struct peer_info *peers;
     uint8_t term;
     uint8_t leader_id;
     int period;
     int timeout_threshold;
+    struct peer_info *peers;
 };
 
 enum msg_type
