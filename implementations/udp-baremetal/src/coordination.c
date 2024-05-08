@@ -33,13 +33,12 @@ double get_elapsed_time_ms(struct timeval start)
     return (now.tv_sec - start.tv_sec) * 1000.0 + (now.tv_usec - start.tv_usec) / 1000.0;
 }
 
-int free_peer_info()
+void free_peer_info()
 {
     for (uint8_t i = 0; i < this_node.num_nodes; i++) {
         freeaddrinfo(this_node.peers[i].send_addrinfo);
         freeaddrinfo(this_node.peers[i].listen_addrinfo);
     }
-    return 0;
 }
 
 uint8_t get_my_link_info() // get connected nodes information in encoded form
@@ -119,33 +118,35 @@ void update_timestamp(uint8_t node_id)
     gettimeofday(&this_node.peers[node_id].timeout_start, NULL);
 }
 
-int handle_data(uint64_t msg)
+void handle_data(uint64_t msg)
 {
     uint8_t type = get_msg_type(msg);
     switch (type) {
     case heartbeat_msg:
-        return handle_heartbeat(msg);
+        handle_heartbeat(msg);
+        break;
     case election_msg:
-        return handle_election_msg(msg);
+        handle_election_msg(msg);
+        break;
     case reply_msg:
-        return handle_reply(msg);
+        handle_reply_msg(msg);
+        break;
     case leader_msg:
-        return handle_leader_msg(msg);
+        handle_leader_msg(msg);
+        break;
+    default:
+        fprintf(stderr, "Error: unrecognized message type received: %hhd\n", type);
+        exit(1);
     }
-
-    fprintf(stderr, "Error: unrecognized message type received: %hhd\n", type);
-    return -1;
 }
 
-int handle_heartbeat(uint64_t msg)
+void handle_heartbeat(uint64_t msg)
 {
     uint8_t node_id = get_msg_node_id(msg);
     update_timestamp(node_id);
-
-    return 0;
 }
 
-int handle_election_msg(uint64_t msg)
+void handle_election_msg(uint64_t msg)
 {
     uint8_t term = get_msg_term(msg);
     uint8_t node_id = get_msg_node_id(msg);
@@ -161,8 +162,6 @@ int handle_election_msg(uint64_t msg)
             this_node.peers[i].phase = sending_election_msg;
         }
     }
-
-    fprintf(stderr, "connected_count=%hhd, get_my_connected_count()=%hhd\n", connected_count, get_my_connected_count());
     
     if (compare_term(term, this_node.term) == 0) {
         if (connected_count > get_my_connected_count() || (connected_count == get_my_connected_count() && node_id < this_node.id))
@@ -174,11 +173,9 @@ int handle_election_msg(uint64_t msg)
     }
 
     // else received msg term is old, can ignore the msg
-
-    return 0;
 }
 
-int handle_reply(uint64_t msg)
+void handle_reply_msg(uint64_t msg)
 {
     uint8_t term = get_msg_term(msg);
     uint8_t node_id = get_msg_node_id(msg);
@@ -187,10 +184,11 @@ int handle_reply(uint64_t msg)
 
     if (compare_term(term, this_node.term) == -1) {
         // throw away old replies
-        return 0;
+        return;
     } else if (compare_term(term, this_node.term) == 1) {
-        // is must not happen
-        return -1;
+        // must not happen
+        fprintf(stderr, "Receiving larger term. Exiting...\n");
+        exit(1);
     }
 
     // update link info of peer
@@ -219,34 +217,37 @@ int handle_reply(uint64_t msg)
             this_node.peers[i].phase = sending_leader_msg;
         }
     }
-
-    return 0;
 }
 
-int handle_leader_msg(uint64_t msg)
+void handle_leader_msg(uint64_t msg)
 {
     uint8_t term = get_msg_term(msg);
     uint8_t node_id = get_msg_node_id(msg);
+    uint8_t path_info = get_msg_path_info(msg);
 
     update_timestamp(node_id);
 
     if (compare_term(term, this_node.term) == -1) {
         // throw away old leader messages
-        return 0;
+        return;
     } else if (compare_term(term, this_node.term) == 1) {
-        // is must not happen
-        return -1;
+        // must not happen
+        fprintf(stderr, "Receiving larger term. Exiting...\n");
+        exit(1);
+    }
+
+    if (path_info != this_node.path_info) {
+        this_node.path_info = path_info;
+        fprintf(stderr, "Receiving new path: %hhd\n", path_info);
     }
 
     this_node.leader_id = node_id;
 
     for (uint8_t i = 0; i < this_node.num_nodes; i++)
         this_node.peers[i].phase = sending_heartbeat;
-
-    return 0;
 }
 
-int prepare_address_info(char *address, char *port, struct addrinfo **res)
+void prepare_address_info(char *address, char *port, struct addrinfo **res)
 {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
@@ -256,9 +257,8 @@ int prepare_address_info(char *address, char *port, struct addrinfo **res)
 
     if ((status = getaddrinfo(address, port, &hints, res))) {
         fprintf(stderr, "Error with getting address info, status = %s\n", gai_strerror(status));
-        return -1;
+        exit(1);
     }
-    return 0;
 }
 
 int get_socket(struct addrinfo *address_info)
@@ -268,7 +268,7 @@ int get_socket(struct addrinfo *address_info)
 
     if (sock == -1) {
         fprintf(stderr, "Error creating socket\n");
-        return -1;
+        exit(1);
     }
 
     return sock;
@@ -296,7 +296,7 @@ uint8_t get_best_path() // use global paths[] (ordered by priority, hardcoded va
     }
 
     fprintf(stderr, "NO PATHS AVAILABLE!!!\n");
-    return 0;
+    exit(1);
 }
 
 int path_is_valid(struct path p) // path should be pair of node ids
@@ -316,7 +316,7 @@ int path_is_valid(struct path p) // path should be pair of node ids
     return (link_info1 >> offset) && 0x01;
 }
 
-int initialize_socket()
+void initialize_socket()
 {
     for (uint8_t i = 0; i < this_node.num_nodes; i++) {
         if (i == this_node.id)
@@ -332,35 +332,30 @@ int initialize_socket()
         struct addrinfo *address_info = this_node.peers[i].listen_addrinfo;
         if (bind(this_node.peers[i].listen_socket, address_info->ai_addr, address_info->ai_addrlen) == -1) {
             fprintf(stderr, "Error with binding receiver to port\n");
-            return -1;
+            exit(1);
         }
     }
-
-    return 0;
 }
 
-int send_once(uint64_t msg, struct addrinfo *addrinfo, int sock) // helper function for msg sending
+void send_once(uint64_t msg, struct addrinfo *addrinfo, int sock) // helper function for msg sending
 {
     int bytes_sent;
     if ((bytes_sent = sendto(sock, &msg, sizeof(uint64_t), 0, addrinfo->ai_addr, addrinfo->ai_addrlen)) == -1) {
         fprintf(stderr, "Error with sending data\n");
-        return -1;
+        exit(1);
     }
-    return 0;
 }
 
-int heartbeat_timeout_handler()
+void heartbeat_timeout_handler()
 {
     this_node.term = (this_node.term + 1) & MASK;
     for (uint8_t i = 0; i < this_node.num_nodes; i++) {
         this_node.peers[i].has_voted = 0;
         this_node.peers[i].phase = sending_election_msg;
     }
-
-    return 0;
 }
 
-int check_heartbeat_timeout()
+void check_heartbeat_timeout()
 {
     for (uint8_t i = 0; i < this_node.num_nodes; i++) {
         if (i == this_node.id || !this_node.peers[i].connected)
@@ -371,11 +366,9 @@ int check_heartbeat_timeout()
             heartbeat_timeout_handler();
         }
     }
-
-    return 0;
 }
 
-int check_messages()
+void check_messages()
 {
     // receive data
     struct sockaddr_storage from;
@@ -389,17 +382,12 @@ int check_messages()
 
         uint64_t recv_buf;
         while (recvfrom(this_node.peers[i].listen_socket, &recv_buf, recv_buf_size, 0, (struct sockaddr *)&from, &fromlen) > 0) {
-            fprintf(stderr, "recieving from node %hhd\n", i);
-            if (handle_data(recv_buf) < 0) {
-                return -1;
-            }
+            handle_data(recv_buf);
         }
     }
-
-    return 0;
 }
 
-int send_messages()
+void send_messages()
 {
     for (uint8_t i = 0; i < this_node.num_nodes; i++)
     {
@@ -421,10 +409,11 @@ int send_messages()
             break;
         case sending_leader_msg:
             uint8_t path_info = get_best_path();
-            if (path_info == 0) {
-                fprintf(stderr, "NO PATH FOUND!!! Exiting...\n");
-                exit(1);
+            if (path_info != this_node.path_info) {
+                this_node.path_info = path_info;
+                fprintf(stderr, "Broadcasting new path: %hhd\n", path_info);
             }
+
             msg = encode_msg(leader_msg, this_node.id, this_node.term, path_info);
             break;
         default:
@@ -432,14 +421,11 @@ int send_messages()
             exit(1);
         }
 
-        fprintf(stderr, "to=%hhd, phase=%hhd, term=%hhd\n", i, this_node.peers[i].phase, this_node.term);
         send_once(msg, this_node.peers[i].send_addrinfo, this_node.peers[i].send_socket);
     }
-
-    return 0;
 }
 
-int coordination()
+void coordination()
 {
     // initialize socket
     initialize_socket();
@@ -449,13 +435,10 @@ int coordination()
         gettimeofday(&start_time, NULL);
 
         check_heartbeat_timeout();
-        // fprintf(stderr, "check_heartbeat_timeout() done\n");
 
         check_messages();
-        // fprintf(stderr, "check_messages() done\n");
 
         send_messages();
-        // fprintf(stderr, "send_messages() done\n");
 
         // sleep until this_node.period[ms] passes
         while (1) {
@@ -472,8 +455,6 @@ int coordination()
             }
         }
     }
-
-    return 0;
 }
 
 int main(int argc, char **argv)
@@ -491,8 +472,8 @@ int main(int argc, char **argv)
     this_node.id = strtol(argv[2], NULL, 10);
 
     this_node.num_nodes = 4;
-    this_node.period = 200; // ms
-    this_node.timeout_threshold = 1000; // ms
+    this_node.period = 20; // ms
+    this_node.timeout_threshold = 100; // ms
 
     // open info file
     FILE *node_info_file;
@@ -536,15 +517,14 @@ int main(int argc, char **argv)
     this_node.peers = peers;
     this_node.term = 0;
     this_node.peers[this_node.id].link_info = 15; // 1111 in binary, or all connected
-    this_node.leader_id = -1;
+    this_node.leader_id = 0;
+    this_node.path_info = 10; // 1010 in binary, or Main ECU - Main VCU
 
     // begin coordination algorithm
     coordination();
 
     // clean up other memory
     free_peer_info();
-
-    printf("Done. Exiting main()\n");
 
     exit(0);
 }
