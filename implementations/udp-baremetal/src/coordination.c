@@ -23,7 +23,7 @@ uint8_t get_my_connected_count() {
             connected_count++;
         }
     }
-    return connected_count;
+    return connected_count - 1; // subtract one to exclude self
 }
 
 double get_elapsed_time_ms(struct timeval start)
@@ -127,13 +127,13 @@ int handle_data(uint64_t msg)
         return handle_heartbeat(msg);
     case election_msg:
         return handle_election_msg(msg);
-    case election_reply_msg:
-        return handle_election_reply(msg);
+    case reply_msg:
+        return handle_reply(msg);
     case leader_msg:
         return handle_leader_msg(msg);
     }
 
-    fprintf(stderr, "Error: unrecognized message type received\n");
+    fprintf(stderr, "Error: unrecognized message type received: %hhd\n", type);
     return -1;
 }
 
@@ -161,6 +161,8 @@ int handle_election_msg(uint64_t msg)
             this_node.peers[i].phase = sending_election_msg;
         }
     }
+
+    fprintf(stderr, "connected_count=%hhd, get_my_connected_count()=%hhd\n", connected_count, get_my_connected_count());
     
     if (compare_term(term, this_node.term) == 0) {
         if (connected_count > get_my_connected_count() || (connected_count == get_my_connected_count() && node_id < this_node.id))
@@ -176,7 +178,7 @@ int handle_election_msg(uint64_t msg)
     return 0;
 }
 
-int handle_election_reply(uint64_t msg)
+int handle_reply(uint64_t msg)
 {
     uint8_t term = get_msg_term(msg);
     uint8_t node_id = get_msg_node_id(msg);
@@ -322,8 +324,8 @@ int initialize_socket()
 
         // have recvfrom() timeout after 1 second so it doesn't block forever
         struct timeval recv_to;
-        recv_to.tv_sec = 1;
-        recv_to.tv_usec = 0;
+        recv_to.tv_sec = 0;
+        recv_to.tv_usec = 1;
         setsockopt(this_node.peers[i].listen_socket, SOL_SOCKET, SO_RCVTIMEO, &recv_to, sizeof(recv_to));
 
         // bind to port
@@ -361,10 +363,10 @@ int heartbeat_timeout_handler()
 int check_heartbeat_timeout()
 {
     for (uint8_t i = 0; i < this_node.num_nodes; i++) {
-        if (this_node.peers[i].id == this_node.id)
+        if (i == this_node.id || !this_node.peers[i].connected)
             continue;
         
-        if (this_node.peers[i].connected && get_elapsed_time_ms(this_node.peers[i].timeout_start) > this_node.timeout_threshold) {
+        if (get_elapsed_time_ms(this_node.peers[i].timeout_start) > this_node.timeout_threshold) {
             this_node.peers[i].connected = 0;
             heartbeat_timeout_handler();
         }
@@ -382,11 +384,12 @@ int check_messages()
 
     uint8_t recv_buf_size = 64; // big enough for our network protocols messages
     for (uint8_t i = 0; i < this_node.num_nodes; i++) {
-        if (this_node.peers[i].id == this_node.id)
+        if (i == this_node.id)
             continue;
 
         uint64_t recv_buf;
-        while (recvfrom(this_node.peers[i].listen_socket, &recv_buf, recv_buf_size, 0, (struct sockaddr *)&from, &fromlen)) {
+        while (recvfrom(this_node.peers[i].listen_socket, &recv_buf, recv_buf_size, 0, (struct sockaddr *)&from, &fromlen) > 0) {
+            fprintf(stderr, "recieving from node %hhd\n", i);
             if (handle_data(recv_buf) < 0) {
                 return -1;
             }
@@ -400,7 +403,7 @@ int send_messages()
 {
     for (uint8_t i = 0; i < this_node.num_nodes; i++)
     {
-        if (this_node.peers[i].id == this_node.id)
+        if (i == this_node.id || !this_node.peers[i].connected)
             continue;
 
         uint64_t msg;
@@ -414,7 +417,7 @@ int send_messages()
             msg = encode_msg(election_msg, this_node.id, this_node.term, get_my_link_info());
             break;
         case sending_reply_msg:
-            msg = encode_msg(election_reply_msg, this_node.id, this_node.term, get_my_link_info());
+            msg = encode_msg(reply_msg, this_node.id, this_node.term, get_my_link_info());
             break;
         case sending_leader_msg:
             uint8_t path_info = get_best_path();
@@ -425,10 +428,11 @@ int send_messages()
             msg = encode_msg(leader_msg, this_node.id, this_node.term, path_info);
             break;
         default:
-            fprintf(stderr, "Error: unrecognized message type received\n");
+            fprintf(stderr, "Error: unrecognized phase to node %hhd\n", i);
             exit(1);
         }
 
+        fprintf(stderr, "to=%hhd, phase=%hhd, term=%hhd\n", i, this_node.peers[i].phase, this_node.term);
         send_once(msg, this_node.peers[i].send_addrinfo, this_node.peers[i].send_socket);
     }
 
@@ -445,20 +449,23 @@ int coordination()
         gettimeofday(&start_time, NULL);
 
         check_heartbeat_timeout();
+        // fprintf(stderr, "check_heartbeat_timeout() done\n");
 
         check_messages();
+        // fprintf(stderr, "check_messages() done\n");
 
         send_messages();
+        // fprintf(stderr, "send_messages() done\n");
 
-        // sleep until period ms passes
+        // sleep until this_node.period[ms] passes
         while (1) {
             struct timeval now;
             gettimeofday(&now, NULL);
             int elapsed_time = (now.tv_sec - start_time.tv_sec) * 1000.0 + (now.tv_usec - start_time.tv_usec) / 1000.0;
-            if (elapsed_time < this_node.period * 1000 * 1000) {
+            if (elapsed_time < this_node.period) {
                 struct timespec ts;
                 ts.tv_sec = 0;
-                ts.tv_nsec = this_node.period * 1000 * 100; // period/10 ms
+                ts.tv_nsec = this_node.period * 1000 * 1000 / 10; // period/10[ms]
                 nanosleep(&ts, NULL);
             } else {
                 break;
@@ -475,25 +482,21 @@ int main(int argc, char **argv)
     setpriority(PRIO_PROCESS, 0, -20);
 
     // argv should be [number_of_nodes, node_info_file, my_node_id, period]
-    if (argc != 6) {
-        fprintf(stderr, "Error: expected 5 command line arguments (number of nodes, node info file, my node id, period, experiment id), found: %d\n", argc - 1);
+    if (argc != 3) {
+        fprintf(stderr, "Error: expected 2 command line arguments (node info file, my node id), found: %d\n", argc - 1);
         exit(1);
     }
 
-    // get number of nodes from command line args
-    this_node.num_nodes = strtol(argv[1], NULL, 10);
-
     // get this process's node id from command line args
-    this_node.id = strtol(argv[3], NULL, 10);
+    this_node.id = strtol(argv[2], NULL, 10);
 
-    // get period for sending messages and checking timeout
-    // heartbeat timeout threshold is 5 times larger than period
-    this_node.period = strtol(argv[4], NULL, 10);
-    this_node.timeout_threshold = 5 * this_node.period;
+    this_node.num_nodes = 4;
+    this_node.period = 200; // ms
+    this_node.timeout_threshold = 1000; // ms
 
     // open info file
     FILE *node_info_file;
-    if ((node_info_file = fopen(argv[2], "r")) == NULL) {
+    if ((node_info_file = fopen(argv[1], "r")) == NULL) {
         fprintf(stderr, "Error: no such file or directory %s\n", argv[2]);
         exit(1);
     }
@@ -503,16 +506,17 @@ int main(int argc, char **argv)
     for (uint8_t i = 0; i < this_node.num_nodes; i++) {
         char send_addr[16];
         char listen_addr[16];
-        char port[16];
+        char port[8][16];
 
-        if ((fscanf(node_info_file, "%hhd %15s %15s %15s", &peers[i].id, send_addr, listen_addr, port)) != 4) {
+        if ((fscanf(node_info_file, "%hhd %15s %15s %15s %15s %15s %15s %15s %15s %15s %15s",
+                &peers[i].id, send_addr, listen_addr, port[0], port[1], port[2], port[3], port[4], port[5], port[6], port[7])) != 11) {
             fprintf(stderr, "Error reading node info file\n");
             fclose(node_info_file);
             exit(1);
         }
 
-        prepare_address_info(send_addr, port, &peers[i].send_addrinfo);
-        prepare_address_info(listen_addr, port, &peers[i].listen_addrinfo);
+        prepare_address_info(send_addr, port[this_node.id * 2], &peers[i].send_addrinfo);
+        prepare_address_info(listen_addr, port[this_node.id * 2 + 1], &peers[i].listen_addrinfo);
         peers[i].send_socket = get_socket(peers[i].send_addrinfo);
         peers[i].listen_socket = get_socket(peers[i].listen_addrinfo);
 

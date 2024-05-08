@@ -13,7 +13,7 @@ enum msg_type
 {
     heartbeat_msg,
     election_msg,
-    election_reply_msg,
+    reply_msg,
     leader_msg
 };
 
@@ -69,10 +69,11 @@ uint8_t get_msg_path_info(uint64_t msg);
 uint8_t get_msg_link_info(uint64_t msg);
 uint8_t get_msg_connected_count(uint64_t msg);
 int compare_term(uint8_t term, uint8_t base_term);
+void update_timestamp(uint8_t node_id);
 int handle_data(uint64_t msg);
 int handle_heartbeat(uint64_t msg);
 int handle_election_msg(uint64_t msg);
-int handle_election_reply(uint64_t msg);
+int handle_reply(uint64_t msg);
 int handle_leader_msg(uint64_t msg);
 int prepare_address_info(char *address, char *port, struct addrinfo **res);
 int get_socket(struct addrinfo *address_info);
