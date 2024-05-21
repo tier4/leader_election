@@ -53,8 +53,11 @@ struct coordination_node
     uint8_t term;
     uint8_t leader_id;
     uint8_t path_info;
+    uint8_t end_coordination;
+    uint8_t in_emergency;
     int period;
     int timeout_threshold;
+    struct peer_info autoware;
     struct peer_info *peers;
 };
 

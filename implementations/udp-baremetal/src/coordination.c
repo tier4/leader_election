@@ -173,6 +173,10 @@ void handle_election_msg(uint64_t msg)
     }
 
     // else received msg term is old, can ignore the msg
+
+    if (connected_count < this_node.num_nodes) {
+        this_node.in_emergency = 1;
+    }
 }
 
 void handle_reply_msg(uint64_t msg)
@@ -318,19 +322,30 @@ int path_is_valid(struct path p) // path should be pair of node ids
 
 void initialize_socket()
 {
+    struct timeval recv_to;
+    recv_to.tv_sec = 0;
+    recv_to.tv_usec = 1;
+
     for (uint8_t i = 0; i < this_node.num_nodes; i++) {
         if (i == this_node.id)
             continue;
 
-        // have recvfrom() timeout after 1 second so it doesn't block forever
-        struct timeval recv_to;
-        recv_to.tv_sec = 0;
-        recv_to.tv_usec = 1;
         setsockopt(this_node.peers[i].listen_socket, SOL_SOCKET, SO_RCVTIMEO, &recv_to, sizeof(recv_to));
 
         // bind to port
         struct addrinfo *address_info = this_node.peers[i].listen_addrinfo;
         if (bind(this_node.peers[i].listen_socket, address_info->ai_addr, address_info->ai_addrlen) == -1) {
+            fprintf(stderr, "Error with binding receiver to port\n");
+            exit(1);
+        }
+    }
+
+    if (this_node.id == 0) {
+        setsockopt(this_node.autoware.listen_socket, SOL_SOCKET, SO_RCVTIMEO, &recv_to, sizeof(recv_to));
+
+        // bind to port
+        struct addrinfo *address_info = this_node.autoware.listen_addrinfo;
+        if (bind(this_node.autoware.listen_socket, address_info->ai_addr, address_info->ai_addrlen) == -1) {
             fprintf(stderr, "Error with binding receiver to port\n");
             exit(1);
         }
@@ -387,6 +402,20 @@ void check_messages()
     }
 }
 
+void check_autoware()
+{
+    // receive from autoware
+    struct sockaddr_storage from;
+    socklen_t fromlen = sizeof(from);
+    memset(&from, 0, sizeof(from));
+    uint8_t recv_buf_size = 64;
+    uint64_t recv_buf;
+    if (recvfrom(this_node.autoware.listen_socket, &recv_buf, recv_buf_size, 0, (struct sockaddr *)&from, &fromlen) > 0) {
+        this_node.end_coordination = 1;
+        fprintf(stderr, "end coordination\n");
+    }
+}
+
 void send_messages()
 {
     for (uint8_t i = 0; i < this_node.num_nodes; i++)
@@ -415,6 +444,11 @@ void send_messages()
             }
 
             msg = encode_msg(leader_msg, this_node.id, this_node.term, path_info);
+            
+            if (this_node.id == 1 && this_node.in_emergency) {
+                send_once(0, this_node.autoware.send_addrinfo, this_node.autoware.send_socket);
+            }
+
             break;
         default:
             fprintf(stderr, "Error: unrecognized phase to node %hhd\n", i);
@@ -430,13 +464,17 @@ void coordination()
     // initialize socket
     initialize_socket();
 
-    while (1) {
+    while (this_node.end_coordination == 0) {
         struct timeval start_time;
         gettimeofday(&start_time, NULL);
 
         check_heartbeat_timeout();
 
         check_messages();
+
+        if (this_node.id == 0) {
+            check_autoware();
+        }
 
         send_messages();
 
@@ -513,12 +551,27 @@ int main(int argc, char **argv)
 
     fclose(node_info_file);
 
+    // for autoware
+    if (this_node.id == 0) {
+        char listen_addr[16] = "127.0.0.1";
+        char port[16] = "8000";
+        prepare_address_info(listen_addr, port, &this_node.autoware.listen_addrinfo);
+        this_node.autoware.listen_socket = get_socket(this_node.autoware.listen_addrinfo);
+    } else if (this_node.id == 1) {
+        char send_addr[16] = "127.0.0.1";
+        char port[16] = "8001";
+        prepare_address_info(send_addr, port, &this_node.autoware.send_addrinfo);
+        this_node.autoware.send_socket = get_socket(this_node.autoware.send_addrinfo);
+    }
+
     // initialize this_node struct
     this_node.peers = peers;
     this_node.term = 0;
     this_node.peers[this_node.id].link_info = 15; // 1111 in binary, or all connected
     this_node.leader_id = 0;
     this_node.path_info = 10; // 1010 in binary, or Main ECU - Main VCU
+    this_node.end_coordination = 0;
+    this_node.in_emergency = 0;
 
     // begin coordination algorithm
     coordination();
