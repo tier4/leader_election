@@ -5,23 +5,14 @@
 
 ```
 cd specification/SPIN
-spin -a leader_election.pml
-gcc pan.c -o pan
-./pan -a
-```
-
-## Run simulation
-
-```
-cd specification/SPIN
-spin leader_election.pml
+make run
 ```
 
 ## Run error trail
 
 ```
 cd specification/SPIN
-spin -t leader_election.pml.trail
+make trail
 ```
 
 
