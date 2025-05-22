@@ -35,10 +35,8 @@ inline new_election(id) {
     byte i;
     for (i : 0..(NODE_NUM-1)) {
         if
-        :: connected[id].arr[i] ->
-            network[i].interface[id]!Election(terms[id], connected_count[id]);
-        :: else ->
-            ; // do nothing
+        :: connected[id].arr[i] -> network[i].interface[id]!Election(terms[id], connected_count[id]);
+        :: else // do nothing
         fi
     }
 }
@@ -76,8 +74,7 @@ inline onElection(id, node_id, term, count) {
     :: term > terms[id] ->
         terms[id] = term;
         new_election(id);
-    :: else ->
-        ; // do nothing 
+    :: else // do nothing 
     fi
 
     if
@@ -87,18 +84,13 @@ inline onElection(id, node_id, term, count) {
             network[node_id].interface[id]!Reply(term, 0); // reply yes, 0 means nothing
         :: count == connected_count[id] ->
             if
-            :: node_id < id ->
-                network[node_id].interface[id]!Reply(term, 0); // reply yes, 0 means nothing
-            :: node_id == id ->
-                assert(false);
-            :: node_id > id ->
-                ; // do nothing
+            :: node_id < id ->  network[node_id].interface[id]!Reply(term, 0); // reply yes, 0 means nothing
+            :: node_id == id -> assert(false);
+            :: node_id > id ->  ; // do nothing
             fi
-        :: count < connected_count[id] ->
-            ; // do nothing
+        :: count < connected_count[id] -> ; // do nothing
         fi
-    :: term < terms[id] ->
-        ; // do nothing
+    :: term < terms[id] -> ; // do nothing
     fi
 }
 
@@ -110,8 +102,8 @@ inline onElection(id, node_id, term, count) {
 ///  If term(A) != term(B): do nothing
 inline onReply(id, node_id, term) {
     if
-    :: term > terms[id] ->
-        assert(false);
+    :: term > terms[id] -> assert(false);
+    :: term < terms[id] -> ; // do nothing
     :: term == terms[id] ->
         yes_count[id]++;
         if
@@ -120,17 +112,12 @@ inline onReply(id, node_id, term) {
             byte i;
             for (i : 0..(NODE_NUM-1)) {
                 if
-                :: i != id && connected[id].arr[i] ->
-                    network[i].interface[id]!Leader(term, 0); // 0 means nothing
-                :: else ->
-                    ; // do nothing
+                :: i != id && connected[id].arr[i] -> network[i].interface[id]!Leader(term, 0); // 0 means nothing
+                :: else -> ; // do nothing
                 fi
             }
-        :: else ->
-            ; // do nothing
+        :: else -> ; // do nothing
         fi
-    :: term < terms[id] ->
-        ; // do nothing
     fi
 }
 
@@ -139,12 +126,9 @@ inline onReply(id, node_id, term) {
 ///  If term(A) != term(B): do nothing
 inline onLeader(id, node_id, term) {
     if
-    :: term > terms[id] ->
-        assert(false);
-    :: term == terms[id] ->
-        leader[id] = node_id;
-    :: term < terms[id] ->
-        ; // do nothing
+    :: term > terms[id] ->  assert(false);
+    :: term == terms[id] -> leader[id] = node_id;
+    :: term < terms[id] ->  ; // do nothing
     fi
 }
 
@@ -153,48 +137,25 @@ proctype node(byte id) {
 
     // represent non-deterministic behaviors
     atomic {
-        byte node_id, term, count;
+        byte term, count;
 
         if
-        // timeout
-        :: network[id].interface[0]?Timeout(_, _) ->
-            onTimeout(id, 0);
-        :: network[id].interface[1]?Timeout(_, _) ->
-            onTimeout(id, 1);
-        :: network[id].interface[2]?Timeout(_, _) ->
-            onTimeout(id, 2);
-        :: network[id].interface[3]?Timeout(_, _) ->
-            onTimeout(id, 3);
-
-        // election
-        :: network[id].interface[0]?Election(term, count) ->
-            onElection(id, 0, term, count);
-        :: network[id].interface[1]?Election(term, count) ->
-            onElection(id, 1, term, count);
-        :: network[id].interface[2]?Election(term, count) ->
-            onElection(id, 2, term, count);
-        :: network[id].interface[3]?Election(term, count) ->
-            onElection(id, 3, term, count);
-
-        // reply
-        :: network[id].interface[0]?Reply(term, _) ->
-            onReply(id, 0, term);
-        :: network[id].interface[1]?Reply(term, _) ->
-            onReply(id, 1, term);
-        :: network[id].interface[2]?Reply(term, _) ->
-            onReply(id, 2, term);
-        :: network[id].interface[3]?Reply(term, _) ->
-            onReply(id, 3, term);
-
-        // leader
-        :: network[id].interface[0]?Leader(term, _) ->
-            onLeader(id, 0, term);
-        :: network[id].interface[1]?Leader(term, _) ->
-            onLeader(id, 1, term);
-        :: network[id].interface[2]?Leader(term, _) ->
-            onLeader(id, 2, term);
-        :: network[id].interface[3]?Leader(term, _) ->
-            onLeader(id, 3, term);
+        :: network[id].interface[0]?Timeout(_, _) -> onTimeout(id, 0);
+        :: network[id].interface[1]?Timeout(_, _) -> onTimeout(id, 1);
+        :: network[id].interface[2]?Timeout(_, _) -> onTimeout(id, 2);
+        :: network[id].interface[3]?Timeout(_, _) -> onTimeout(id, 3);
+        :: network[id].interface[0]?Election(term, count) -> onElection(id, 0, term, count);
+        :: network[id].interface[1]?Election(term, count) -> onElection(id, 1, term, count);
+        :: network[id].interface[2]?Election(term, count) -> onElection(id, 2, term, count);
+        :: network[id].interface[3]?Election(term, count) -> onElection(id, 3, term, count);
+        :: network[id].interface[0]?Reply(term, _) -> onReply(id, 0, term);
+        :: network[id].interface[1]?Reply(term, _) -> onReply(id, 1, term);
+        :: network[id].interface[2]?Reply(term, _) -> onReply(id, 2, term);
+        :: network[id].interface[3]?Reply(term, _) -> onReply(id, 3, term);
+        :: network[id].interface[0]?Leader(term, _) -> onLeader(id, 0, term);
+        :: network[id].interface[1]?Leader(term, _) -> onLeader(id, 1, term);
+        :: network[id].interface[2]?Leader(term, _) -> onLeader(id, 2, term);
+        :: network[id].interface[3]?Leader(term, _) -> onLeader(id, 3, term);
 
         // termination
         :: finished_election ->
@@ -215,31 +176,28 @@ init {
         connected_count[i] = NODE_NUM - 1;
         for (j : 0..(NODE_NUM-1)) {
             if
-            :: i == j ->
-                connected[i].arr[j] = false;
-            :: else ->
-                connected[i].arr[j] = true;
+            :: i == j -> connected[i].arr[j] = false;
+            :: else   -> connected[i].arr[j] = true;
             fi
         }
     }
 
     // invoke a node 0 crash in 4 nodes
-    // crash[0] = true;
-    // expected_leader = 1;
-    // network[1].interface[0]!Timeout(0, 0); // 0 means nothing
-    // network[2].interface[0]!Timeout(0, 0); // 0 means nothing
-    // network[3].interface[0]!Timeout(0, 0); // 0 means nothing
+    crash[0] = true;
+    expected_leader = 1;
+    network[1].interface[0]!Timeout(0, 0); // 0 means nothing
+    network[2].interface[0]!Timeout(0, 0); // 0 means nothing
+    network[3].interface[0]!Timeout(0, 0); // 0 means nothing
 
     // invoke a link 0-1 crash in 4 nodes
-    expected_leader = 2;
-    network[1].interface[0]!Timeout(0, 0); // 0 means nothing
-    network[0].interface[1]!Timeout(0, 0); // 0 means nothing
+    // expected_leader = 2;
+    // network[1].interface[0]!Timeout(0, 0); // 0 means nothing
+    // network[0].interface[1]!Timeout(0, 0); // 0 means nothing
 
     // start each process
     for (i : 0..(NODE_NUM-1)) {
         if
-        :: !crash[i] ->
-            run node(i);
+        :: !crash[i] -> run node(i);
         :: else
         fi
     }

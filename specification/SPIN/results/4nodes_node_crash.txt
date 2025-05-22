@@ -1,7 +1,6 @@
-Depth=     601 States=    1e+06 Transitions= 3.98e+06 Memory=   441.718 t=     12.9 R=   8e+04
-
 (Spin Version 6.5.2 -- 6 December 2019)
         + Partial Order Reduction
+        + Compression
 
 Full statespace search for:
         never claim             + (p)
@@ -9,64 +8,24 @@ Full statespace search for:
         acceptance   cycles     + (fairness disabled)
         invalid end states      - (disabled by never claim)
 
-State-vector 660 byte, depth reached 601, errors: 0
+State-vector 660 byte, depth reached 583, errors: 0
    942774 states, stored (1.88555e+06 visited)
   5701673 states, matched
   7587221 transitions (= visited+matched)
- 35727572 atomic steps
-hash conflicts:     84026 (resolved)
+ 32078806 atomic steps
+hash conflicts:    116488 (resolved)
 
 Stats on memory usage (in Megabytes):
-  618.580       equivalent memory usage for states (stored*(State-vector + overhead))
-  590.780       actual memory usage for states (compression: 95.51%)
-                state-vector as stored = 629 byte + 28 byte overhead
+  625.773       equivalent memory usage for states (stored*(State-vector + overhead))
+   49.467       actual memory usage for states (compression: 7.90%)
+                state-vector as stored = 19 byte + 36 byte overhead
   128.000       memory used for hash table (-w24)
     0.534       memory used for DFS stack (-m10000)
-  718.866       total actual memory usage
+  177.948       total actual memory usage
 
 
-unreached in proctype node
-        leader_election.pml:49, state 29, "connected[id].arr[1] = 0"
-        leader_election.pml:50, state 30, "terms[id] = (terms[id]+1)"
-        leader_election.pml:36, state 33, "i = 0"
-        leader_election.pml:39, state 36, "network[i].interface[id]!Election,terms[id],connected_count[id]"
-        leader_election.pml:33, state 46, "yes_count[id] = 0"
-        leader_election.pml:47, state 47, "printf('timeout\n')"
-        leader_election.pml:49, state 51, "connected[id].arr[2] = 0"
-        leader_election.pml:50, state 52, "terms[id] = (terms[id]+1)"
-        leader_election.pml:36, state 55, "i = 0"
-        leader_election.pml:39, state 58, "network[i].interface[id]!Election,terms[id],connected_count[id]"
-        leader_election.pml:33, state 68, "yes_count[id] = 0"
-        leader_election.pml:47, state 69, "printf('timeout\n')"
-        leader_election.pml:49, state 73, "connected[id].arr[3] = 0"
-        leader_election.pml:50, state 74, "terms[id] = (terms[id]+1)"
-        leader_election.pml:36, state 77, "i = 0"
-        leader_election.pml:39, state 80, "network[i].interface[id]!Election,terms[id],connected_count[id]"
-        leader_election.pml:33, state 90, "yes_count[id] = 0"
-        leader_election.pml:47, state 91, "printf('timeout\n')"
-        leader_election.pml:36, state 98, "i = 0"
-        leader_election.pml:39, state 101, "network[i].interface[id]!Election,terms[id],connected_count[id]"
-        leader_election.pml:36, state 108, "((i<=(4-1)))"
-        leader_election.pml:36, state 108, "else"
-        leader_election.pml:33, state 111, "yes_count[id] = 0"
-        leader_election.pml:57, state 113, "((term>terms[id]))"
-        leader_election.pml:57, state 113, "else"
-        leader_election.pml:68, state 117, "network[0].interface[id]!Reply,term,0"
-        leader_election.pml:72, state 120, "network[0].interface[id]!Reply,term,0"
-        leader_election.pml:55, state 132, "printf('election\n')"
-        leader_election.pml:72, state 243, "network[3].interface[id]!Reply,term,0"
-        leader_election.pml:96, state 263, "i = 0"
-        leader_election.pml:96, state 264, "i = 0"
-        leader_election.pml:99, state 267, "network[i].interface[id]!Leader,term,0"
-        leader_election.pml:96, state 291, "i = 0"
-        leader_election.pml:96, state 292, "i = 0"
-        leader_election.pml:99, state 295, "network[i].interface[id]!Leader,term,0"
-        (33 of 412 states)
-unreached in init
-        (0 of 42 states)
-unreached in claim p
-        _spin_nvr.tmp:6, state 6, "-end-"
-        (1 of 6 states)
+nr of templates: [ 0:globals 1:chans 2:procs ]
+collapse counts: [ 0:41115 2:143 3:109 4:1 ]
 
-pan: elapsed time 24.6 seconds
-pan: rate 76586.028 states/second
+pan: elapsed time 3.84 seconds
+pan: rate 491028.12 states/second
