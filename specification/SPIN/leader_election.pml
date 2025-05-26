@@ -21,37 +21,30 @@ byte yes_count[NODE_NUM]
 byte leader[NODE_NUM]
 byte expected_leader
 
-// termination on 4 nodes
-#define finished_election ( \
-    (crash[0] || (empty(network[0].interface[1]) && empty(network[0].interface[2]) && empty(network[0].interface[3]))) && \
-    (crash[1] || (empty(network[1].interface[0]) && empty(network[1].interface[2]) && empty(network[1].interface[3]))) && \
-    (crash[2] || (empty(network[2].interface[0]) && empty(network[2].interface[1]) && empty(network[2].interface[3]))) && \
-    (crash[3] || (empty(network[3].interface[0]) && empty(network[3].interface[1]) && empty(network[3].interface[2]))) \
-)
-
 inline new_election(id) {
     yes_count[id] = 0;
     
     byte i;
     for (i : 0..(NODE_NUM-1)) {
         if
-        :: connected[id].arr[i] -> network[i].interface[id]!Election(terms[id], connected_count[id]);
+        :: connected[id].arr[i] -> network[i].interface[id]!Election(terms[id], connected_count[id])
         :: else // do nothing
         fi
-    }
+    };
+    skip
 }
 
-/// When a node detects heartbeat timeout, do the following 2 steps as an atomic operation:
+/// When a node detects heartbeat timeout, do the following 2 steps as an d_step operation:
 ///  1. Increment term
 ///  2. Initialize yes_count(how many yes votes A get so far) to 0, and send election messages to all other nodes.
 ///     Election messages have node_id, term and connected_count which represent how many node are currently connected to the node:
 ///      yes_count(A)(term(A)) = 0
-///      election message = "Node x wants to be a leader! I’m conntected to y nodes! My term is z!"
+///      election message = "Node x wants to be a leader! I'm conntected to y nodes! My term is z!"
 inline onTimeout(id, node_id) {
     connected_count[id]--;
     connected[id].arr[node_id] = false;
     terms[id]++;
-    new_election(id);
+    new_election(id)
 }
 
 /// When a node A recieves an election message from node B, first compare term(A) and term(B) using the comparison logic below, and do the following:
@@ -63,17 +56,17 @@ inline onTimeout(id, node_id) {
 ///     reply message = "Node x votes for you. My term is z"
 ///    If node_id(A) <= node_id(B): do nothing
 ///   If connected_count(A) > connected_count(B): do nothing
-///  If term(A) < term(B), do the following 2 steps as an atomic operation:
+///  If term(A) < term(B), do the following 2 steps as an d_step operation:
 ///   1. Update term to the one in the message: term(A) = term(B)
 ///   2. Initialize yes_count and send election messages to all other nodes:
 ///       yes_count(A)(term(A)) = 0
-///       election message = "Node x wants to be a leader! I’m conntected to y nodes! My term is z!"
+///       election message = "Node x wants to be a leader! I'm conntected to y nodes! My term is z!"
 ///  If term(A) > term(B): do nothing
 inline onElection(id, node_id, term, count) {
     if
     :: term > terms[id] ->
         terms[id] = term;
-        new_election(id);
+        new_election(id)
     :: else // do nothing 
     fi
 
@@ -81,29 +74,28 @@ inline onElection(id, node_id, term, count) {
     :: term == terms[id] ->
         if
         :: count > connected_count[id] ->
-            network[node_id].interface[id]!Reply(term, 0); // reply yes, 0 means nothing
+            network[node_id].interface[id]!Reply(term, 0) // reply yes, 0 means nothing
         :: count == connected_count[id] ->
             if
-            :: node_id < id ->  network[node_id].interface[id]!Reply(term, 0); // reply yes, 0 means nothing
-            :: node_id == id -> assert(false);
-            :: node_id > id ->  ; // do nothing
+            :: node_id < id -> network[node_id].interface[id]!Reply(term, 0) // reply yes, 0 means nothing
+            :: node_id == id -> assert(false)
+            :: node_id > id // do nothing
             fi
-        :: count < connected_count[id] -> ; // do nothing
+        :: count < connected_count[id] // do nothing
         fi
-    :: term < terms[id] -> ; // do nothing
+    :: term < terms[id] // do nothing
     fi
 }
 
 /// When a node A recieves a reply message from node B, do the following:
-///  If term(A) == term(B), do the following 2 steps as an atomic operation:
+///  If term(A) == term(B), do the following 2 steps as an d_step operation:
 ///   1. Increment the "Yes" counts: yes_count(A)(term(A)) += 1
 ///   2. When yes_count is the same as connected_count, send leader messages to all other nodes.
 ///      Leader messages have node_id and term: "Node x has become a new leader! My term is z"
 ///  If term(A) != term(B): do nothing
 inline onReply(id, node_id, term) {
     if
-    :: term > terms[id] -> assert(false);
-    :: term < terms[id] -> ; // do nothing
+    :: term > terms[id] -> assert(false)
     :: term == terms[id] ->
         yes_count[id]++;
         if
@@ -113,11 +105,12 @@ inline onReply(id, node_id, term) {
             for (i : 0..(NODE_NUM-1)) {
                 if
                 :: i != id && connected[id].arr[i] -> network[i].interface[id]!Leader(term, 0); // 0 means nothing
-                :: else -> ; // do nothing
+                :: else // do nothing
                 fi
             }
-        :: else -> ; // do nothing
+        :: else // do nothing
         fi
+    :: term < terms[id] // do nothing
     fi
 }
 
@@ -126,47 +119,33 @@ inline onReply(id, node_id, term) {
 ///  If term(A) != term(B): do nothing
 inline onLeader(id, node_id, term) {
     if
-    :: term > terms[id] ->  assert(false);
+    :: term > terms[id] -> assert(false)
     :: term == terms[id] -> leader[id] = node_id;
-    :: term < terms[id] ->  ; // do nothing
+    :: term < terms[id] // do nothing
     fi
 }
 
 proctype node(byte id) {
-    main_loop:
+    byte term, count;
 
-    // represent non-deterministic behaviors
-    atomic {
-        byte term, count;
-
-        if
-        :: network[id].interface[0]?Timeout(_, _) -> onTimeout(id, 0);
-        :: network[id].interface[1]?Timeout(_, _) -> onTimeout(id, 1);
-        :: network[id].interface[2]?Timeout(_, _) -> onTimeout(id, 2);
-        :: network[id].interface[3]?Timeout(_, _) -> onTimeout(id, 3);
-        :: network[id].interface[0]?Election(term, count) -> onElection(id, 0, term, count);
-        :: network[id].interface[1]?Election(term, count) -> onElection(id, 1, term, count);
-        :: network[id].interface[2]?Election(term, count) -> onElection(id, 2, term, count);
-        :: network[id].interface[3]?Election(term, count) -> onElection(id, 3, term, count);
-        :: network[id].interface[0]?Reply(term, _) -> onReply(id, 0, term);
-        :: network[id].interface[1]?Reply(term, _) -> onReply(id, 1, term);
-        :: network[id].interface[2]?Reply(term, _) -> onReply(id, 2, term);
-        :: network[id].interface[3]?Reply(term, _) -> onReply(id, 3, term);
-        :: network[id].interface[0]?Leader(term, _) -> onLeader(id, 0, term);
-        :: network[id].interface[1]?Leader(term, _) -> onLeader(id, 1, term);
-        :: network[id].interface[2]?Leader(term, _) -> onLeader(id, 2, term);
-        :: network[id].interface[3]?Leader(term, _) -> onLeader(id, 3, term);
-
-        // termination
-        :: finished_election ->
-            assert(leader[id] == expected_leader);
-            goto end;
-        fi
-    }
-
-    goto main_loop
-
-    end:
+    do
+    :: d_step { network[id].interface[0]?Timeout(_, _) -> onTimeout(id, 0) }
+    :: d_step { network[id].interface[1]?Timeout(_, _) -> onTimeout(id, 1) }
+    :: d_step { network[id].interface[2]?Timeout(_, _) -> onTimeout(id, 2) }
+    :: d_step { network[id].interface[3]?Timeout(_, _) -> onTimeout(id, 3) }
+    :: d_step { network[id].interface[0]?Election(term, count) -> onElection(id, 0, term, count) }
+    :: d_step { network[id].interface[1]?Election(term, count) -> onElection(id, 1, term, count) }
+    :: d_step { network[id].interface[2]?Election(term, count) -> onElection(id, 2, term, count) }
+    :: d_step { network[id].interface[3]?Election(term, count) -> onElection(id, 3, term, count) }
+    :: d_step { network[id].interface[0]?Reply(term, _) -> onReply(id, 0, term) }
+    :: d_step { network[id].interface[1]?Reply(term, _) -> onReply(id, 1, term) }
+    :: d_step { network[id].interface[2]?Reply(term, _) -> onReply(id, 2, term) }
+    :: d_step { network[id].interface[3]?Reply(term, _) -> onReply(id, 3, term) }
+    :: d_step { network[id].interface[0]?Leader(term, _) -> onLeader(id, 0, term) }
+    :: d_step { network[id].interface[1]?Leader(term, _) -> onLeader(id, 1, term) }
+    :: d_step { network[id].interface[2]?Leader(term, _) -> onLeader(id, 2, term) }
+    :: d_step { network[id].interface[3]?Leader(term, _) -> onLeader(id, 3, term) }
+    od
 }
 
 init {
@@ -203,4 +182,11 @@ init {
     }
 }
 
-ltl p { <>(node@end) }
+ltl p {
+    <>[](
+        (!crash[0] -> leader[0] == expected_leader) &&
+        (!crash[1] -> leader[1] == expected_leader) &&
+        (!crash[2] -> leader[2] == expected_leader) &&
+        (!crash[3] -> leader[3] == expected_leader)
+    )
+}

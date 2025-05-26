@@ -8,25 +8,24 @@ Full statespace search for:
         acceptance   cycles     + (fairness disabled)
         invalid end states      - (disabled by never claim)
 
-State-vector 684 byte, depth reached 610, errors: 0
- 75091370 states, stored (1.50183e+08 visited)
-7.9668694e+08 states, matched
-9.4686968e+08 transitions (= visited+matched)
-3.0740341e+09 atomic steps
-hash conflicts: 2.6002654e+08 (resolved)
+State-vector 684 byte, depth reached 290, errors: 0
+ 55452856 states, stored (1.10906e+08 visited)
+8.0280077e+08 states, matched
+9.1370639e+08 transitions (= visited+matched)
+        0 atomic steps
+hash conflicts: 3.0130183e+08 (resolved)
 
 Stats on memory usage (in Megabytes):
-51561.152       equivalent memory usage for states (stored*(State-vector + overhead))
- 4563.598       actual memory usage for states (compression: 8.85%)
-                state-vector as stored = 28 byte + 36 byte overhead
- 2048.000       memory used for hash table (-w28)
+38076.454       equivalent memory usage for states (stored*(State-vector + overhead))
+ 3093.472       actual memory usage for states (compression: 8.12%)
+                state-vector as stored = 22 byte + 36 byte overhead
+  512.000       memory used for hash table (-w26)
     0.534       memory used for DFS stack (-m10000)
-    1.137       memory lost to fragmentation
- 6610.995       total actual memory usage
+ 3605.085       total actual memory usage
 
 
 nr of templates: [ 0:globals 1:chans 2:procs ]
-collapse counts: [ 0:717671 2:198 3:108 4:1 ]
+collapse counts: [ 0:717665 2:116 3:108 4:2 ]
 
-pan: elapsed time 519 seconds
-pan: rate 289224.55 states/second
+pan: elapsed time 432 seconds
+pan: rate 256607.18 states/second
