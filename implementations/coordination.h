@@ -25,7 +25,6 @@ struct thread_pool
 
 struct peer_info
 {
-    int id;
     struct timeval timeout_start;
     struct addrinfo *send_addrinfo;
     struct addrinfo *listen_addrinfo;
@@ -126,7 +125,7 @@ int handle_election_reply(long msg);
 int handle_leader_msg(long msg);
 
 /* NETWORK FUNCTIONS */
-int get_socket(char *address, struct addrinfo *address_info, int send_socket);
+int get_socket(char *address, char *port, struct addrinfo **address_info, int send_socket);
 int send_once(long msg, struct addrinfo *addrinfo, int sock);
 void *send_heartbeat(void *void_args);
 void *recv_until(void *void_args);

@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <signal.h>
 #include <sys/resource.h>
+#include <errno.h>
 
 #include "coordination.h"
 
@@ -151,7 +152,7 @@ short get_my_link_info() // get connected nodes information in encoded form
     short link_info = 0;
     for (int i = 0; i < this_node.num_nodes; i++)
     {
-        if (this_node.peers[i].id == this_node.id)
+        if (i == this_node.id)
             link_info = (link_info << 1) + 1; // link info includes self as connected
         else if (this_node.peers[i].connected)
             link_info = (link_info << 1) + 1;
@@ -391,9 +392,6 @@ int handle_leader_msg(long msg)
         write_to_log(election_end);
     }
 
-    printf("Acknowledging node %d is leader of term %d\n", get_msg_node_id(msg), this_node.term);
-   // printf("New path = %d\n", get_msg_path_info(msg));
-
     // keep track of leader
     this_node.leader_id = get_msg_node_id(msg);
     this_node.election_status = inactive;
@@ -403,7 +401,7 @@ int handle_leader_msg(long msg)
 }
 
 /* NETWORK FUNCTIONS */
-int get_socket(char *address, struct addrinfo *address_info, int send_socket)
+int get_socket(char *address, char *port, struct addrinfo ** address_info, int send_socket)
 {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
@@ -411,8 +409,7 @@ int get_socket(char *address, struct addrinfo *address_info, int send_socket)
     hints.ai_socktype = SOCK_DGRAM;
     
     int status;
-
-    if ((status = getaddrinfo(address, NULL, &hints, &address_info)))
+    if ((status = getaddrinfo(address, port, &hints, address_info)))
     {
         fprintf(stderr, "Error with getting address info, status = %s\n", gai_strerror(status));
         return -1;
@@ -420,9 +417,9 @@ int get_socket(char *address, struct addrinfo *address_info, int send_socket)
 
     int sock;
     if (send_socket)
-        sock = socket(address_info->ai_family, address_info->ai_socktype | SOCK_NONBLOCK, address_info->ai_protocol);
+        sock = socket((*address_info)->ai_family, (*address_info)->ai_socktype | SOCK_NONBLOCK, (*address_info)->ai_protocol);
     else
-        sock = socket(address_info->ai_family, address_info->ai_socktype, address_info->ai_protocol);
+        sock = socket((*address_info)->ai_family, (*address_info)->ai_socktype, (*address_info)->ai_protocol);
 
     if (sock == -1)
     {
@@ -438,7 +435,7 @@ int send_once(long msg, struct addrinfo *addrinfo, int sock) // helper function 
     int bytes_sent;
     if ((bytes_sent = sendto(sock, &msg, sizeof(long), 0, addrinfo->ai_addr, addrinfo->ai_addrlen)) == -1)
     {
-        fprintf(stderr, "Error with sending data\n");
+        fprintf(stderr, "Error with sending data: %s (errno: %d)\n", strerror(errno), errno);
         return -1;
     }
     return 0;
@@ -465,7 +462,7 @@ void *send_heartbeat(void *void_args) // helper function for heartbeats
 
         if ((bytes_sent = sendto(args->peer.send_socket, &args->msg, sizeof(long), 0, address_info->ai_addr, address_info->ai_addrlen)) == -1)
         {
-            fprintf(stderr, "Error with sending data\n");
+            fprintf(stderr, "Error with sending heartbeat: %s (errno: %d)\n", strerror(errno), errno);
             free(args);
             pthread_exit(NULL);
         }
@@ -538,7 +535,7 @@ int broadcast_heartbeat()
 
     for (int i = 0; i < this_node.num_nodes; i++)
     {
-        if (this_node.peers[i].id == this_node.id) // don't send message to oneself
+        if (i == this_node.id) // don't send message to oneself
             continue;
 
         struct send_args *args = (struct send_args *)malloc(sizeof(struct send_args));
@@ -779,7 +776,7 @@ void *track_heartbeat_timers()
     {
         for (int i = 0; i < this_node.num_nodes; i++)
         {
-            if (this_node.peers[i].id == this_node.id)
+            if (i == this_node.id)
                 continue;
             if (this_node.peers[i].connected && get_elapsed_time_ms(this_node.peers[i].timeout_start) > timeout_threshold)
             {
@@ -813,9 +810,6 @@ void *heartbeat_timeout_handler(void *void_args)
     peer_id++;
 
     pthread_mutex_lock(&this_node.mu);
-
-   // printf("No heartbeat received from node %d! Starting leader election...\n", this_node.peers[peer_id].id);
-   // printf("Connected count is now %d\n", this_node.connected_count);
 
     // log error if timeouts > 1
     if (++this_node.num_timeouts > 1)
@@ -967,8 +961,10 @@ int main(int argc, char **argv)
         {"172.20.9.10", "172.20.0.10", "172.20.1.10", "172.20.2.10"},
         {"172.20.0.20", "172.20.9.20", "172.20.3.20", "172.20.4.20"},
         {"172.20.1.30", "172.20.3.30", "172.20.9.30", "172.20.5.30"},
-        {"172.20.2.40", "172.20.4.40", "172.20.5.30", "172.20.9.40"}
+        {"172.20.2.40", "172.20.4.40", "172.20.5.40", "172.20.9.40"}
     };
+
+    char * ports[4] = {"8080", "8081", "8082", "8083"};
 
     // fill peer info
     struct peer_info peers[num_nodes];
@@ -979,8 +975,8 @@ int main(int argc, char **argv)
         char * send_addr = addresses[i][my_id];
         char * listen_addr = addresses[my_id][i];
 
-        peers[i].send_socket = get_socket(send_addr, peers[i].send_addrinfo, 1);
-        peers[i].listen_socket = get_socket(listen_addr, peers[i].listen_addrinfo, 0);
+        peers[i].send_socket = get_socket(send_addr, ports[i], &peers[i].send_addrinfo, 1);
+        peers[i].listen_socket = get_socket(listen_addr, ports[my_id], &peers[i].listen_addrinfo, 0);
 
         peers[i].connected = 1;
         peers[i].link_info = 0;

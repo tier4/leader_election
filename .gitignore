@@ -13,3 +13,4 @@ log/*
 **/pan*
 
 **/output/
+implementations/leader_election
