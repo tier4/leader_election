@@ -126,8 +126,7 @@ int handle_election_reply(long msg);
 int handle_leader_msg(long msg);
 
 /* NETWORK FUNCTIONS */
-int prepare_address_info(char *address, char *port, struct addrinfo **res);
-int get_socket(struct addrinfo *address_info, int send_socket);
+int get_socket(char *address, struct addrinfo *address_info, int send_socket);
 int send_once(long msg, struct addrinfo *addrinfo, int sock);
 void *send_heartbeat(void *void_args);
 void *recv_until(void *void_args);

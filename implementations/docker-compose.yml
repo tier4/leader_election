@@ -1,0 +1,94 @@
+services:
+  main_ecu:
+    build:
+      context: .
+    container_name: main_ecu
+    networks:
+      me_se:
+        ipv4_address: 172.20.0.10
+      me_mv:
+        ipv4_address: 172.20.1.10
+      me_sv:
+        ipv4_address: 172.20.2.10
+    tty: true
+    cpuset: 2,8
+
+  sub_ecu:
+    build:
+      context: .
+    container_name: sub_ecu
+    networks:
+      me_se:
+        ipv4_address: 172.20.0.20
+      se_mv:
+        ipv4_address: 172.20.3.20
+      se_sv:
+        ipv4_address: 172.20.4.20
+    tty: true
+    cpuset: 3,9
+
+  main_vcu:
+    build:
+      context: .
+    container_name: main_vcu
+    networks:
+      me_mv:
+        ipv4_address: 172.20.1.30
+      se_mv:
+        ipv4_address: 172.20.3.30
+      mv_sv:
+        ipv4_address: 172.20.5.30
+    tty: true
+    cpuset: 4,11
+
+  sub_vcu:
+    build:
+      context: .
+    container_name: sub_vcu
+    networks:
+      me_sv:
+        ipv4_address: 172.20.2.40
+      se_sv:
+        ipv4_address: 172.20.4.40
+      mv_sv:
+        ipv4_address: 172.20.5.40
+    tty: true
+    cpuset: 5,12
+
+networks:
+  me_se:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+          gateway: 172.20.0.1
+  me_mv:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.1.0/24
+          gateway: 172.20.1.1
+  me_sv:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.2.0/24
+          gateway: 172.20.2.1
+  se_mv:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.3.0/24
+          gateway: 172.20.3.1
+  se_sv:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.4.0/24
+          gateway: 172.20.4.1
+  mv_sv:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.5.0/24
+          gateway: 172.20.5.1

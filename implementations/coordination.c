@@ -8,9 +8,10 @@
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
-#include "coordination.h"
 #include <signal.h>
 #include <sys/resource.h>
+
+#include "coordination.h"
 
 // Hardcoded paths (ORDERED BY PRIORITY)
 #define NUM_PATHS 4
@@ -22,8 +23,8 @@ struct path paths[NUM_PATHS] = {{0, 2}, {0, 3}, {1, 2}, {1, 3}};
 struct coordination_node this_node;
 struct thread_pool tpool;
 
-int period;
-int timeout_threshold;
+int period = 10;
+int timeout_threshold = 50;
 
 /* THREAD POOL FUNCTIONS */
 int thread_pool_init(int count)
@@ -402,24 +403,21 @@ int handle_leader_msg(long msg)
 }
 
 /* NETWORK FUNCTIONS */
-int prepare_address_info(char *address, char *port, struct addrinfo **res)
+int get_socket(char *address, struct addrinfo *address_info, int send_socket)
 {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
+    
     int status;
 
-    if ((status = getaddrinfo(address, port, &hints, res)))
+    if ((status = getaddrinfo(address, NULL, &hints, &address_info)))
     {
         fprintf(stderr, "Error with getting address info, status = %s\n", gai_strerror(status));
         return -1;
     }
-    return 0;
-}
 
-int get_socket(struct addrinfo *address_info, int send_socket)
-{
     int sock;
     if (send_socket)
         sock = socket(address_info->ai_family, address_info->ai_socktype | SOCK_NONBLOCK, address_info->ai_protocol);
@@ -674,20 +672,19 @@ void *broadcast_leader_msg(void *void_args)
 /* COORDINATION FUNCTIONS */
 int coordination()
 {
-   // printf("setting initial heartbeat timers\n");
+    // printf("setting initial heartbeat timers\n");
     // being heartbeat timers and spinoff thread tracking heartbeat timers
     begin_heartbeat_timers();
 
-   // printf("beginning sending heartbeats\n");
+    // printf("beginning sending heartbeats\n");
     // for each other node, spinoff thread sending periodic heartbeats
     begin_heartbeats();
 
-   // printf("beginning listening\n");
+    // printf("beginning listening\n");
     // start thread listening for communication from other nodes
     begin_listening();
 
-   // printf("coordination started successfully\n");
-
+    // printf("coordination started successfully\n");
     return 0;
 }
 
@@ -914,7 +911,7 @@ int path_is_valid(struct path p) // path should be pair of node ids
 int main(int argc, char **argv)
 {
     // set CPU priority
-    setpriority(PRIO_PROCESS, 0, -20);
+    // setpriority(PRIO_PROCESS, 0, -20);
 
     // Initialize thread_pool
     thread_pool_init(20); // TODO: adjust this value as needed
@@ -932,88 +929,63 @@ int main(int argc, char **argv)
         exit(-1);
     }
 
-    // argv should be [number_of_nodes, node_info_file, my_node_id, period]
-    if (argc != 6)
+    if (argc != 3)
     {
-        fprintf(stderr, "Error: expected 5 command line arguments (number of nodes, node info file, my node id, period, experiment id), found: %d\n", argc - 1);
+        fprintf(stderr, "Error: expected 2 command line arguments (my node id, experiment id), found: %d\n", argc - 1);
         exit(1);
     }
 
     // get number of nodes from command line args
-    int num_nodes = strtol(argv[1], NULL, 10);
-
-    // get list of peer node's info from command line args
-    /*
-    file format should be:
-    id address port
-    id address port
-    ...
-    */
+    int num_nodes = 4;
 
     // get this process's node id from command line args
-    int my_id = strtol(argv[3], NULL, 10);
-
-    // get period for sending messages and checking timeout
-    // heartbeat timeout threshold is 5 times larger than period
-    period = strtol(argv[4], NULL, 10);
-    timeout_threshold = 5 * period;
+    int my_id = strtol(argv[1], NULL, 10);
 
     // no timeouts detected to start
     this_node.num_timeouts = 0;
 
     // create file for logging
     char fname[64];
-    if (strlen(argv[5]) > (64 - 12))
+    if (strlen(argv[2]) > (64 - 12))
     {
-        fprintf(stderr, "Error: experiment id is too large %s\n", argv[5]);
+        fprintf(stderr, "Error: experiment id is too large %s\n", argv[3]);
         exit(1);
     }
-    strcpy(fname, "node");
-    strcat(fname, argv[3]); // this node's id
+    strcpy(fname, "/node");
+    strcat(fname, argv[1]); // this node's id
     strcat(fname, "_exp");
-    strcat(fname, argv[5]);
+    strcat(fname, argv[2]);
     strcat(fname, ".csv");
     if ((this_node.log = fopen(fname, "w+")) == NULL)
     {
-        fprintf(stderr, "Error creating log file %s\n", argv[5]);
+        fprintf(stderr, "Error creating log file %s\n", argv[3]);
         exit(1);
     }
     this_node.last_election_term_logged = -1;
 
-    // open info file
-    FILE *node_info_file;
-    if ((node_info_file = fopen(argv[2], "r")) == NULL)
-    {
-        fprintf(stderr, "Error: no such file or directory %s\n", argv[2]);
-        exit(1);
-    }
+    char * addresses[4][4] = {
+        {"172.20.9.10", "172.20.0.10", "172.20.1.10", "172.20.2.10"},
+        {"172.20.0.20", "172.20.9.20", "172.20.3.20", "172.20.4.20"},
+        {"172.20.1.30", "172.20.3.30", "172.20.9.30", "172.20.5.30"},
+        {"172.20.2.40", "172.20.4.40", "172.20.5.30", "172.20.9.40"}
+    };
 
     // fill peer info
     struct peer_info peers[num_nodes];
     for (int i = 0; i < num_nodes; i++)
     {
-        char send_addr[16];
-        char listen_addr[16];
-        char port[16];
+        if (i == my_id) continue;
 
-        if ((fscanf(node_info_file, "%d %15s %15s %15s", &peers[i].id, send_addr, listen_addr, port)) != 4)
-        {
-            fprintf(stderr, "Error reading node info file\n");
-            fclose(node_info_file);
-            exit(1);
-        }
+        char * send_addr = addresses[i][my_id];
+        char * listen_addr = addresses[my_id][i];
 
-        prepare_address_info(send_addr, port, &peers[i].send_addrinfo);
-        prepare_address_info(listen_addr, port, &peers[i].listen_addrinfo);
-        peers[i].send_socket = get_socket(peers[i].send_addrinfo, 1);
-        peers[i].listen_socket = get_socket(peers[i].listen_addrinfo, 0);
+        peers[i].send_socket = get_socket(send_addr, peers[i].send_addrinfo, 1);
+        peers[i].listen_socket = get_socket(listen_addr, peers[i].listen_addrinfo, 0);
 
         peers[i].connected = 1;
         peers[i].link_info = 0;
         peers[i].heartbeat_exchanged = 0;
     }
-
-    fclose(node_info_file);
 
     // initialize this_node struct
     pthread_mutex_init(&this_node.mu, NULL);
