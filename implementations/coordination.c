@@ -121,6 +121,7 @@ int write_to_log(int type)
 
     if (fprintf(this_node.log, "%d,%li.%s\n", type, now.tv_sec, us_formatted) >= 0)
     {
+        fflush(this_node.log);
         return 0;
     }
 
@@ -945,7 +946,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "Error: experiment id is too large %s\n", argv[3]);
         exit(1);
     }
-    strcpy(fname, "/node");
+    strcpy(fname, "/leader_election/output/node");
     strcat(fname, argv[1]); // this node's id
     strcat(fname, "_exp");
     strcat(fname, argv[2]);
@@ -1015,7 +1016,7 @@ int main(int argc, char **argv)
     thread_pool_destroy();
 
     // clean up other memory
-   // printf("Freeing peer_info and voted_peers...\n");
+    // printf("Freeing peer_info and voted_peers...\n");
     free_peer_info();
     free(this_node.voted_peers);
 

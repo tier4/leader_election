@@ -3,6 +3,8 @@ services:
     build:
       context: .
     container_name: main_ecu
+    volumes:
+      - ./:/leader_election
     networks:
       me_se:
         ipv4_address: 172.20.0.10
@@ -17,6 +19,8 @@ services:
     build:
       context: .
     container_name: sub_ecu
+    volumes:
+      - ./:/leader_election
     networks:
       me_se:
         ipv4_address: 172.20.0.20
@@ -31,6 +35,8 @@ services:
     build:
       context: .
     container_name: main_vcu
+    volumes:
+      - ./:/leader_election
     networks:
       me_mv:
         ipv4_address: 172.20.1.30
@@ -45,6 +51,8 @@ services:
     build:
       context: .
     container_name: sub_vcu
+    volumes:
+      - ./:/leader_election
     networks:
       me_sv:
         ipv4_address: 172.20.2.40
