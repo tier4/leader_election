@@ -1,4 +1,4 @@
-ITERATION=3
+ITERATION=100
 
 make clean
 make all
@@ -30,7 +30,10 @@ docker exec sub_vcu /leader_election/leader_election 3 $experiment_id &
 sleep 1
 
 # main ecu node crash
-docker exec main_ecu pkill -SIGINT leader_election
+docker exec main_ecu pkill leader_election
+
+timestamp=$(date +%s.%N)
+echo "$timestamp" >> ./output/crash_exp$experiment_id.txt
 
 # main_ecu - sub_ecu link crash
 # docker network disconnect docker_runner_me_se main_ecu

@@ -107,8 +107,6 @@ void sigint_handler() // this allows program to finish cleanly on CTRL-C press
     this_node.election_status = inactive;
     this_node.end_coordination = 1;
     pthread_mutex_unlock(&this_node.mu);
-
-    write_to_log(crash);
 }
 
 /* UTILS */
