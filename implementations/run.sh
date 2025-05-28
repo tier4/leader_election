@@ -30,10 +30,10 @@ docker exec sub_vcu /leader_election/leader_election 3 $experiment_id &
 sleep 1
 
 # main ecu node crash
-docker exec main_ecu pkill leader_election
+docker exec main_ecu pkill -SIGINT leader_election
 
 # main_ecu - sub_ecu link crash
-# docker network disconnect docker_runner_me_mv main_ecu
+# docker network disconnect docker_runner_me_se main_ecu
 
 sleep 1
 

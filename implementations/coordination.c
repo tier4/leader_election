@@ -107,6 +107,8 @@ void sigint_handler() // this allows program to finish cleanly on CTRL-C press
     this_node.election_status = inactive;
     this_node.end_coordination = 1;
     pthread_mutex_unlock(&this_node.mu);
+
+    write_to_log(crash);
 }
 
 /* UTILS */
@@ -767,8 +769,6 @@ void *track_heartbeat_timers()
         pthread_mutex_unlock(&this_node.mu);
     }
 
-   // printf("All heartbeats exchanged. Starting heartbeat timers...\n");
-
     // start checking timers
     pthread_mutex_lock(&this_node.mu);
 
@@ -885,8 +885,6 @@ short get_best_path() // use global paths[] (ordered by priority, hardcoded valu
 
 int path_is_valid(struct path p) // path should be pair of node ids
 {
-   // printf("Checking validity of path (node_%d, node_%d)\n", p.node1, p.node2);
-
     // "Note that if the leader cannot recieve any information from a node,
     // then the leader acts as if it recieved all-False array"
     // this makes sure I'm not using out of date information
@@ -995,8 +993,6 @@ int main(int argc, char **argv)
     this_node.connected_count = num_nodes - 1;
     this_node.peers[this_node.id].link_info = 15; // 1111 in binary, or all connected
 
-   // printf("Starting with connected_count = %d\n", this_node.connected_count);
-
     // no leader to start
     this_node.leader_id = -1;
 
@@ -1016,16 +1012,9 @@ int main(int argc, char **argv)
     thread_pool_destroy();
 
     // clean up other memory
-    // printf("Freeing peer_info and voted_peers...\n");
     free_peer_info();
     free(this_node.voted_peers);
-
-    // write to log time of program crash and exit
-    write_to_log(crash);
-
     fclose(this_node.log);
-
-    printf("Done. Exiting main()\n");
 
     exit(0);
 }
