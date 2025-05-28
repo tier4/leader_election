@@ -1,7 +1,9 @@
-ITERATION=100
+ITERATION=1000
 
 make clean
 make all
+
+rm -rf ./output/*
 
 docker network prune --force
 
@@ -32,11 +34,8 @@ sleep 1
 # main ecu node crash
 docker exec main_ecu pkill leader_election
 
-timestamp=$(date +%s.%N)
-echo "$timestamp" >> ./output/crash_exp$experiment_id.txt
-
 # main_ecu - sub_ecu link crash
-# docker network disconnect docker_runner_me_se main_ecu
+# docker network disconnect implementations_me_se main_ecu
 
 sleep 1
 
